@@ -14,6 +14,7 @@ import {
   describeToolCall,
   executeAgentTool,
 } from '@/lib/agent-tools';
+import { playCompletionChime, primeCompletionAudio } from '@/lib/completion-chime';
 import { runtime } from '@/lib/runtime';
 import { useUiStore } from './ui';
 import { useWorkspaceStore } from './workspace';
@@ -147,6 +148,10 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       set({ setupOpen: true });
       return;
     }
+
+    // `send` runs from the composer's submit gesture; unlock audio now so the
+    // completion chime is allowed when the model finishes some time later.
+    primeCompletionAudio();
 
     const snapshot = runtime.snapshot();
     const controller = new AbortController();
@@ -309,6 +314,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         messages: finalizeStreaming(get().messages),
         ...(changed ? { undoSnapshot: snapshot, undoAvailable: true } : {}),
       });
+      playCompletionChime();
     } catch (error) {
       if (runId !== runSequence) return;
 

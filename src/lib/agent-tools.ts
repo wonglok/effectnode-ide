@@ -447,10 +447,20 @@ Tools:
 Rules:
 - Paths are absolute (start with /). Never touch node_modules.
 - Relative imports MUST include the file extension, e.g. import App from './App.tsx' and import './styles.css'. The in-browser server does not resolve extensionless imports.
-- React comes from an import map. Do NOT import any other npm package and do not add dependencies; there is no npm install in the preview. Style with plain CSS in /src/styles.css or inline styles.
+- React, Zustand, and three come from an import map. Do NOT import any other npm package and do not add dependencies; there is no npm install in the preview. Use Zustand for shared React state. Style with plain CSS in /src/styles.css or inline styles.
 - Keep /index.html as the entry; do not replace its module script or add external scripts.
 - Match the existing visual language. Make focused, working changes rather than large rewrites.
 - If you create a component, create the file and update the file that imports it in the same turn.
 - Run a read or list when you need to confirm the current state; do not guess file contents.
-- Finish with 1–3 short sentences describing what changed. No headings, no bullet lists unless necessary.`;
+- Finish with 1–3 short sentences describing what changed. No headings, no bullet lists unless necessary — the required planning Gantt chart is the exception.
+
+# react js
+
+must use zstand for react state management
+
+must always do a gantt chart to plan the critical path task execution (do these task one by one), non critical path execution (do these task in parallel).
+
+# three.js
+
+if user provided any glsl code or webgl code or webgl 2.0 code or threeJS WebGLRenderer code please translate to ThreeJS WebGPURenderer Code with TSL (threejs shader language) for the current project's threejs to use.`;
 }

@@ -114,7 +114,8 @@ and HMR updates the preview just like a manual edit.
 The chat lives in its **own column beside the editor**: drag the divider between
 them to resize it, or press `⌘⇧A` to focus the composer. The preview stays
 visible on the right while the agent works, so code, chat, and the running app
-are on screen together.
+are on screen together. When a run finishes successfully, a three-note chime
+signals that the task is done.
 
 Tools exposed to the model:
 
