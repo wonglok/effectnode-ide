@@ -69,7 +69,7 @@ Set `PORT` to change the production port. Saved projects live in
   into the chat while the preview hot-reloads (see below).
 
 Keyboard shortcuts: `⌘S` save project · `⌘B` explorer · `⌘J` panel ·
-`⌘K` projects · `⌘⇧A` agent workbench · `Esc` close dialog · `↑/↓` shell history.
+`⌘K` projects · `⌘⇧A` focus agent chat · `Esc` close dialog · `↑/↓` shell history.
 
 ## Agent workbench
 
@@ -78,9 +78,10 @@ proposes calls, and Forge executes them against the `VirtualFS`. Every edit goes
 through the workspace store, so open buffers reload, the file tree refreshes,
 and HMR updates the preview just like a manual edit.
 
-The chat lives in the **main column** next to the editor: use the `Code` and
-`Agent` tabs at the top of the coding area (or `⌘⇧A`) to switch. The preview
-stays visible on the right while the agent works.
+The chat lives in its **own column beside the editor**: drag the divider between
+them to resize it, or press `⌘⇧A` to focus the composer. The preview stays
+visible on the right while the agent works, so code, chat, and the running app
+are on screen together.
 
 Tools exposed to the model:
 

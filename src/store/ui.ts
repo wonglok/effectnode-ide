@@ -27,7 +27,6 @@ export interface ConfirmRequest {
 }
 
 export type TerminalTab = "terminal" | "console";
-export type MainView = "code" | "agent";
 
 export interface TerminalLine {
   id: number;
@@ -42,7 +41,7 @@ interface UiState {
   explorerOpen: boolean;
   terminalOpen: boolean;
   terminalTab: TerminalTab;
-  mainView: MainView;
+  agentWidth: number;
   previewRatio: number;
   terminalHeight: number;
   projectsOpen: boolean;
@@ -61,7 +60,7 @@ interface UiState {
   setTerminalOpen: (open: boolean) => void;
   toggleTerminal: () => void;
   setTerminalTab: (tab: TerminalTab) => void;
-  setMainView: (view: MainView) => void;
+  setAgentWidth: (width: number) => void;
   setPreviewRatio: (ratio: number) => void;
   setTerminalHeight: (height: number) => void;
   setProjectsOpen: (open: boolean) => void;
@@ -85,7 +84,7 @@ export const useUiStore = create<UiState>()(
       explorerOpen: true,
       terminalOpen: true,
       terminalTab: "console",
-      mainView: "code",
+      agentWidth: 380,
       previewRatio: 0.42,
       terminalHeight: 176,
       projectsOpen: false,
@@ -122,14 +121,10 @@ export const useUiStore = create<UiState>()(
         set((state) => ({ explorerOpen: !state.explorerOpen })),
       setTerminalOpen: (open) => set({ terminalOpen: open }),
       toggleTerminal: () =>
-        set((state) => ({
-          terminalOpen: !state.terminalOpen,
-          // The terminal lives in the code view, so reveal it either way.
-          mainView: "code",
-        })),
-      setTerminalTab: (tab) =>
-        set({ terminalTab: tab, terminalOpen: true, mainView: "code" }),
-      setMainView: (view) => set({ mainView: view }),
+        set((state) => ({ terminalOpen: !state.terminalOpen })),
+      setTerminalTab: (tab) => set({ terminalTab: tab, terminalOpen: true }),
+      setAgentWidth: (width) =>
+        set({ agentWidth: clamp(width, 280, 560) }),
       setPreviewRatio: (ratio) =>
         set({ previewRatio: clamp(ratio, 0.24, 0.72) }),
       setTerminalHeight: (height) =>
@@ -168,7 +163,7 @@ export const useUiStore = create<UiState>()(
         explorerOpen: state.explorerOpen,
         terminalOpen: state.terminalOpen,
         terminalTab: state.terminalTab,
-        mainView: state.mainView,
+        agentWidth: state.agentWidth,
         previewRatio: state.previewRatio,
         terminalHeight: state.terminalHeight,
       }),

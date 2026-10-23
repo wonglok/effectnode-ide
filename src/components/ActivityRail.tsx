@@ -1,4 +1,5 @@
 import { CircleHelp, Files, FolderKanban, Sparkles, SquareTerminal } from 'lucide-react';
+import { useAgentStore } from '@/store/agent';
 import { useRuntimeStore } from '@/store/runtime';
 import { useUiStore } from '@/store/ui';
 
@@ -7,13 +8,18 @@ export function ActivityRail() {
   const terminalOpen = useUiStore((state) => state.terminalOpen);
   const terminalTab = useUiStore((state) => state.terminalTab);
   const projectsOpen = useUiStore((state) => state.projectsOpen);
-  const mainView = useUiStore((state) => state.mainView);
   const toggleExplorer = useUiStore((state) => state.toggleExplorer);
   const setTerminalTab = useUiStore((state) => state.setTerminalTab);
-  const setMainView = useUiStore((state) => state.setMainView);
   const setProjectsOpen = useUiStore((state) => state.setProjectsOpen);
   const setShortcutsOpen = useUiStore((state) => state.setShortcutsOpen);
+  const agentRunning = useAgentStore((state) => state.runStatus === 'running');
   const status = useRuntimeStore((state) => state.status);
+
+  const focusAgent = () => {
+    const input = document.getElementById('agent-input') as HTMLTextAreaElement | null;
+    input?.scrollIntoView({ block: 'nearest' });
+    input?.focus();
+  };
 
   return (
     <nav className="rail" aria-label="Activity">
@@ -40,9 +46,9 @@ export function ActivityRail() {
           <SquareTerminal size={18} />
         </button>
         <button
-          className={`rail-button ${mainView === 'agent' ? 'is-active' : ''}`}
-          onClick={() => setMainView('agent')}
-          title="Agent workbench (⇧⌘A)"
+          className={`rail-button ${agentRunning ? 'is-active' : ''}`}
+          onClick={focusAgent}
+          title="Agent chat (⇧⌘A)"
         >
           <Sparkles size={18} />
         </button>

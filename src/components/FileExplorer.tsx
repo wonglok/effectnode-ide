@@ -43,13 +43,6 @@ export function FileExplorer() {
   const openPrompt = useUiStore((state) => state.openPrompt);
   const openConfirm = useUiStore((state) => state.openConfirm);
   const closeConfirm = useUiStore((state) => state.closeConfirm);
-  const setMainView = useUiStore((state) => state.setMainView);
-
-  // Opening a file from the tree should reveal it in the code view.
-  const openInEditor = (path: string) => {
-    openFile(path);
-    setMainView('code');
-  };
 
   const [menu, setMenu] = useState<MenuState | null>(null);
 
@@ -189,7 +182,7 @@ export function FileExplorer() {
           style={{ paddingLeft: 8 + depth * 12 + 16 }}
           onClick={() => {
             select(node.path);
-            openInEditor(node.path);
+            openFile(node.path);
           }}
           onContextMenu={(event) => openMenu(event, node)}
           title={node.path}
@@ -264,7 +257,7 @@ export function FileExplorer() {
           {menu.node?.type === 'file' ? (
             <button
               onClick={() => {
-                openInEditor(menu.node!.path);
+                openFile(menu.node!.path);
                 setMenu(null);
               }}
             >

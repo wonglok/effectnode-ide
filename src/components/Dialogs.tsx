@@ -337,7 +337,7 @@ const SHORTCUTS = [
   ['⌘B', 'Toggle the file explorer'],
   ['⌘J', 'Toggle the console / terminal'],
   ['⌘K', 'Open the projects dialog'],
-  ['⇧⌘A', 'Open the agent workbench'],
+  ['⇧⌘A', 'Focus the agent chat'],
   ['↑ / ↓', 'Navigate shell history'],
   ['Esc', 'Close a dialog'],
 ];
