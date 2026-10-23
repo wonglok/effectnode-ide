@@ -21,6 +21,7 @@ import {
 } from "three/tsl";
 import { TextGeometry } from "three/addons/geometries/TextGeometry.js";
 import { Font, type FontData } from "three/addons/loaders/FontLoader.js";
+import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { SECTIONS } from "../sections/registry.ts";
 import { Helvetica } from "../lib/helvetica.ts";
 import { SectionRenderPipeline } from "../lib/render-pipeline.ts";
@@ -82,14 +83,15 @@ function addRing(
 
 /* ── Centre title: extruded type, fitted to the viewport ─────────────────── */
 
-const CENTER_TEXT = "Welcome to my template";
+const CENTER_TEXT = "Welcome to\nmy template";
+const LINE_STEP = 1.18;
 const CENTER_FONT = new Font(Helvetica as unknown as FontData);
 const HOME_Z = 9.6;
 const CENTER_FOV = 42;
 
 function textWidthFor(aspect: number) {
   const visibleHeight = 2 * Math.tan((CENTER_FOV * Math.PI) / 360) * HOME_Z;
-  return Math.min(visibleHeight * aspect, visibleHeight) * 0.74;
+  return Math.min(visibleHeight * aspect, visibleHeight) * 0.68;
 }
 
 /**
@@ -97,33 +99,64 @@ function textWidthFor(aspect: number) {
  * outline ships with the starter (helvetica.ts), so no font is fetched.
  */
 function createCenterText(accent: string) {
-  const material = new THREE.MeshBasicNodeMaterial();
-  material.colorNode = mix(tslColor(accent), tslColor("#ffffff"), float(0.7));
-  material.transparent = true;
-  material.opacity = 0.94;
-  material.side = THREE.DoubleSide;
+  // Glass parameters follow the honey-text chapter: thin, clear, dispersive,
+  // with a clearcoat and an environment for the bevel highlights.
+  const material = new THREE.MeshPhysicalNodeMaterial({
+    color: new THREE.Color(accent).lerp(new THREE.Color("#ffffff"), 0.62),
+    roughness: 0.055,
+    metalness: 0,
+    ior: 1.46,
+    transmission: 1,
+    thickness: 0.85,
+    dispersion: 3,
+    clearcoat: 0.6,
+    clearcoatRoughness: 0.05,
+    attenuationColor: new THREE.Color(accent),
+    attenuationDistance: 0.6,
+    emissive: new THREE.Color(accent),
+    emissiveIntensity: 0.06,
+    envMapIntensity: 1.2,
+    side: THREE.FrontSide,
+  });
 
   const mount = new THREE.Group();
   const fit = new THREE.Group();
   mount.add(fit);
 
-  const geometry = new TextGeometry(CENTER_TEXT, {
-    font: CENTER_FONT,
-    size: 1,
-    depth: 0.12,
-    curveSegments: 14,
-    bevelEnabled: true,
-    bevelThickness: 0.06,
-    bevelSize: 0.0245,
-    bevelSegments: 5,
-  });
-  geometry.computeBoundingBox();
-  const box = geometry.boundingBox!;
-  const naturalWidth = box.max.x - box.min.x;
-  geometry.center();
+  const geometries: THREE.BufferGeometry[] = [];
+  const bounds = new THREE.Box3();
 
-  const mesh = new THREE.Mesh(geometry, material);
-  fit.add(mesh);
+  CENTER_TEXT.split("\n").forEach((line, index) => {
+    const geometry = new TextGeometry(line, {
+      font: CENTER_FONT,
+      size: 1,
+      depth: 0.12,
+      curveSegments: 14,
+      bevelEnabled: true,
+      bevelThickness: 0.06,
+      bevelSize: 0.0245,
+      bevelSegments: 5,
+    });
+    geometry.computeBoundingBox();
+    const box = geometry.boundingBox!;
+    // Center each line on the block's axis, then stack by line height.
+    geometry.translate(
+      -(box.min.x + box.max.x) / 2,
+      -index * LINE_STEP,
+      -0.06,
+    );
+    geometry.computeBoundingBox();
+    bounds.union(geometry.boundingBox!);
+    geometries.push(geometry);
+    fit.add(new THREE.Mesh(geometry, material));
+  });
+
+  // Center the whole block vertically, not just each line's baseline.
+  const centerY = (bounds.min.y + bounds.max.y) / 2;
+  for (const geometry of geometries) {
+    geometry.translate(0, -centerY, 0);
+  }
+  const naturalWidth = bounds.max.x - bounds.min.x;
 
   const fitToView = (aspect: number) => {
     fit.scale.setScalar(textWidthFor(aspect) / naturalWidth);
@@ -137,6 +170,14 @@ function createCenterText(accent: string) {
 
 function buildKinetic(accent: string): ChapterWorld {
   const group = new THREE.Group();
+
+  // Glass needs light for its bevels and specular highlights.
+  const keyLight = new THREE.DirectionalLight("#e8f4ff", 3.4);
+  keyLight.position.set(3, 4, 6);
+  group.add(keyLight);
+  const rimLight = new THREE.DirectionalLight(accent, 1.8);
+  rimLight.position.set(-4, -1.5, 4);
+  group.add(rimLight);
 
   // WebGPU only draws point primitives at 1px, so the glints are instanced
   // planes instead of THREE.Points.
@@ -592,6 +633,8 @@ export function SceneStage() {
     let frame = 0;
     let renderer: THREE.WebGPURenderer | null = null;
     let pipeline: SectionRenderPipeline | null = null;
+    let envTarget: THREE.RenderTarget | null = null;
+    let roomEnv: RoomEnvironment | null = null;
     let disposed = false;
 
     const resize = () => {
@@ -636,6 +679,18 @@ export function SceneStage() {
       }
 
       if (disposed || !renderer) return;
+
+      // Prefilter a neutral room for the glass reflections.
+      try {
+        const pmrem = new THREE.PMREMGenerator(renderer);
+        roomEnv = new RoomEnvironment();
+        envTarget = pmrem.fromScene(roomEnv, 0.04);
+        pmrem.dispose();
+        scenes[0].environment = envTarget.texture;
+        scenes[0].environmentIntensity = 0.9;
+      } catch (error) {
+        console.warn("Glass environment unavailable:", error);
+      }
 
       try {
         pipeline = new SectionRenderPipeline(renderer, passes);
@@ -742,6 +797,11 @@ export function SceneStage() {
         // The compositor may not have finished compiling its first frame.
       }
       pipeline = null;
+
+      envTarget?.dispose();
+      envTarget = null;
+      roomEnv?.dispose();
+      roomEnv = null;
 
       try {
         renderer?.dispose();

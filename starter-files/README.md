@@ -13,8 +13,9 @@ falling back to Canvas 2D.
 
 ## The experience
 
-- **01 Kinetic** — a field of orbiting particles and an extruded
-  “Welcome to my template” title drawn with `TextGeometry`.
+- **01 Kinetic** — a field of orbiting particles and a multiline
+  “Welcome to my template” title drawn with `TextGeometry` in transmission
+  glass.
 - **02 Flow Shield** — force lines bending around a silhouette.
 - **03 Live Env** — a wireframe skyline, receding grid, and floating monoliths.
 - **04 Alpha 6** — glass shards built from gradients and geometry.
@@ -31,10 +32,11 @@ page curl, or a cross zoom — rather than a plain opacity fade.
   chapter with a critically damped spring.
 - `src/lib/scroll-phases.ts` — the chapter timeline: hold, blend, anchors.
 - `src/components/SceneStage.tsx` — one WebGPURenderer and four chapter
-  worlds (instanced glints plus the extruded title, displaced flow lines,
-  wireframe city, fresnel glass). Each world has its own scene, camera, and
+  worlds (instanced glints plus the glass title, displaced flow lines,
+  wireframe city, fresnel shards). Each world has its own scene, camera, and
   render pass; the scroll phase drifts and scales the world as it enters or
-  leaves.
+  leaves. The title lines use `MeshPhysicalNodeMaterial` transmission,
+  dispersion and clearcoat with a prefiltered room environment.
 - `src/lib/helvetica.ts` — the Helvetiker outline bundled for `TextGeometry`,
   so the title needs no font request at runtime.
 - `src/lib/render-pipeline.ts` — composes the active pass through a
