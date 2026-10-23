@@ -14,6 +14,7 @@ import viteConfig from '../../starter-files/vite.config.js?raw';
 import tsconfig from '../../starter-files/tsconfig.json?raw';
 import indexHtml from '../../starter-files/index.html?raw';
 import readme from '../../starter-files/README.md?raw';
+import agentsMd from '../../starter-files/AGENTS.md?raw';
 import mainTsx from '../../starter-files/src/main.tsx?raw';
 import appTsx from '../../starter-files/src/App.tsx?raw';
 import stylesCss from '../../starter-files/src/styles.css?raw';
@@ -39,6 +40,7 @@ export const STARTER_FILES: Record<string, string> = {
   '/tsconfig.json': tsconfig,
   '/index.html': indexHtml,
   '/README.md': readme,
+  '/AGENTS.md': agentsMd,
   '/src/main.tsx': mainTsx,
   '/src/App.tsx': appTsx,
   '/src/styles.css': stylesCss,
