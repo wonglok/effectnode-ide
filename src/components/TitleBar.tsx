@@ -1,5 +1,14 @@
-import { CircleHelp, FilePlus2, FolderKanban, Loader2, RotateCw, Save } from 'lucide-react';
+import {
+  CircleHelp,
+  Download,
+  FilePlus2,
+  FolderKanban,
+  Loader2,
+  RotateCw,
+  Save,
+} from 'lucide-react';
 import { saveProject } from '@/lib/actions';
+import { downloadProjectZip } from '@/lib/download-zip';
 import { useProjectStore } from '@/store/projects';
 import { useRuntimeStore } from '@/store/runtime';
 import { useUiStore } from '@/store/ui';
@@ -69,6 +78,15 @@ export function TitleBar() {
         <button className="tool-button" onClick={() => setProjectsOpen(true)} title="Projects (⌘K)">
           <FolderKanban size={14} />
           <span className="tool-label">Projects</span>
+        </button>
+
+        <button
+          className="tool-button"
+          onClick={downloadProjectZip}
+          title="Download all project files as a ZIP archive"
+        >
+          <Download size={13} />
+          <span className="tool-label">Download</span>
         </button>
 
         <span className="titlebar-divider" />

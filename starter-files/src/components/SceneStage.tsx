@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import * as THREE from 'three/webgpu';
+import { useEffect, useRef, useState } from "react";
+import * as THREE from "three/webgpu";
 import {
   abs,
   color as tslColor,
@@ -8,6 +8,7 @@ import {
   mix,
   normalView,
   oneMinus,
+  pass,
   positionLocal,
   positionViewDirection,
   pow,
@@ -17,34 +18,18 @@ import {
   uv,
   vec2,
   vec3,
-} from 'three/tsl';
-import { SECTIONS } from '../sections/registry.ts';
-import { getSectionPhaseAt } from '../lib/scroll-phases.ts';
-import { useScrollerStore } from '../store/useScrollerStore.ts';
+} from "three/tsl";
+import { SECTIONS } from "../sections/registry.ts";
+import { SectionRenderPipeline } from "../lib/render-pipeline.ts";
+import { getSectionPhaseAt } from "../lib/scroll-phases.ts";
+import { useScrollerStore } from "../store/useScrollerStore.ts";
 
 type Pointer = { x: number; y: number };
-type Fade = { material: THREE.Material; base: number };
 
 type ChapterWorld = {
   group: THREE.Group;
-  fades: Fade[];
   update: (time: number, pointer: Pointer) => void;
 };
-
-/** One registry per chapter, so a shared material is only faded once. */
-function fadeRegistry() {
-  const seen = new Set<THREE.Material>();
-  const fades: Fade[] = [];
-  return {
-    fades,
-    track(material: THREE.Material, base = material.opacity) {
-      if (seen.has(material)) return;
-      seen.add(material);
-      material.transparent = true;
-      fades.push({ material, base });
-    },
-  };
-}
 
 function glowPlane(accent: string, size: number, opacity: number) {
   const material = new THREE.MeshBasicNodeMaterial();
@@ -66,7 +51,7 @@ function addRing(
   radius: number,
   accent: string,
   opacity: number,
-  rotation: [number, number, number] = [0, 0, 0]
+  rotation: [number, number, number] = [0, 0, 0],
 ) {
   const material = new THREE.MeshBasicNodeMaterial();
   material.colorNode = tslColor(accent);
@@ -77,7 +62,7 @@ function addRing(
 
   const ring = new THREE.Mesh(
     new THREE.TorusGeometry(radius, 0.006, 6, 240),
-    material
+    material,
   );
   ring.rotation.set(...rotation);
   group.add(ring);
@@ -87,7 +72,6 @@ function addRing(
 /* ── 01 Kinetic: instanced glints on slow orbits ─────────────────────────── */
 
 function buildKinetic(accent: string): ChapterWorld {
-  const registry = fadeRegistry();
   const group = new THREE.Group();
 
   // WebGPU only draws point primitives at 1px, so the glints are instanced
@@ -104,11 +88,10 @@ function buildKinetic(accent: string): ChapterWorld {
   const mesh = new THREE.InstancedMesh(
     new THREE.CircleGeometry(0.024, 8),
     material,
-    count
+    count,
   );
   mesh.frustumCulled = false;
   group.add(mesh);
-  registry.track(material, 0.45);
 
   // The inner radius keeps a calm pocket in the middle for the chapter copy.
   const particles = Array.from({ length: count }, () => ({
@@ -126,27 +109,22 @@ function buildKinetic(accent: string): ChapterWorld {
     addRing(group, 3.9, accent, 0.16),
     addRing(group, 5.3, accent, 0.1),
   ];
-  rings.forEach(({ material: ringMaterial }) => registry.track(ringMaterial));
 
   const glow = glowPlane(accent, 10, 0.4);
   glow.position.z = -3.5;
   group.add(glow);
-  registry.track(glow.material as THREE.Material, 0.4);
 
   const dummy = new THREE.Object3D();
 
   return {
     group,
-    fades: registry.fades,
     update(time, pointer) {
       particles.forEach((particle, index) => {
-        const angle =
-          particle.angle + time * particle.speed + pointer.x * 0.12;
+        const angle = particle.angle + time * particle.speed + pointer.x * 0.12;
         dummy.position.set(
           Math.cos(angle) * particle.radius,
-          particle.height +
-            Math.sin(time * 0.7 + particle.phase) * 0.28,
-          Math.sin(angle) * particle.radius * 0.55
+          particle.height + Math.sin(time * 0.7 + particle.phase) * 0.28,
+          Math.sin(angle) * particle.radius * 0.55,
         );
         dummy.rotation.set(0, 0, time * particle.spin + particle.phase);
         dummy.scale.setScalar(particle.scale);
@@ -168,7 +146,6 @@ function buildKinetic(accent: string): ChapterWorld {
 /* ── 02 Flow Shield: displaced lines wrapping an outline ─────────────────── */
 
 function buildFlow(accent: string): ChapterWorld {
-  const registry = fadeRegistry();
   const group = new THREE.Group();
 
   const rows = 32;
@@ -188,8 +165,8 @@ function buildFlow(accent: string): ChapterWorld {
 
   const flowGeometry = new THREE.BufferGeometry();
   flowGeometry.setAttribute(
-    'position',
-    new THREE.Float32BufferAttribute(positions, 3)
+    "position",
+    new THREE.Float32BufferAttribute(positions, 3),
   );
 
   const flowMaterial = new THREE.LineBasicNodeMaterial();
@@ -203,15 +180,12 @@ function buildFlow(accent: string): ChapterWorld {
     .mul(0.3)
     .add(sin(positionLocal.y.mul(0.8).sub(tslTime.mul(0.32))).mul(0.18));
   const envelope = oneMinus(
-    smoothstep(float(0), float(halfWidth), abs(positionLocal.x))
+    smoothstep(float(0), float(halfWidth), abs(positionLocal.x)),
   );
-  flowMaterial.positionNode = positionLocal.add(
-    vec3(0, 0, wave.mul(envelope))
-  );
+  flowMaterial.positionNode = positionLocal.add(vec3(0, 0, wave.mul(envelope)));
 
   const flowLines = new THREE.LineSegments(flowGeometry, flowMaterial);
   group.add(flowLines);
-  registry.track(flowMaterial, 0.16);
 
   const shieldPoints = [
     new THREE.Vector3(0, 2.55, 0),
@@ -224,14 +198,14 @@ function buildFlow(accent: string): ChapterWorld {
   const shieldCurve = new THREE.CatmullRomCurve3(
     shieldPoints,
     true,
-    'centripetal'
+    "centripetal",
   );
   const shieldGeometry = new THREE.TubeGeometry(
     shieldCurve,
     200,
     0.018,
     6,
-    true
+    true,
   );
 
   const shieldMaterial = new THREE.MeshBasicNodeMaterial();
@@ -244,7 +218,6 @@ function buildFlow(accent: string): ChapterWorld {
   const shield = new THREE.Mesh(shieldGeometry, shieldMaterial);
   shield.position.z = 0.25;
   group.add(shield);
-  registry.track(shieldMaterial, 0.85);
 
   const ghostMaterial = new THREE.MeshBasicNodeMaterial();
   ghostMaterial.colorNode = tslColor(accent);
@@ -257,16 +230,13 @@ function buildFlow(accent: string): ChapterWorld {
   ghost.position.z = 0.25;
   ghost.scale.setScalar(1.14);
   group.add(ghost);
-  registry.track(ghostMaterial, 0.22);
 
   const glow = glowPlane(accent, 9, 0.26);
   glow.position.z = -2.5;
   group.add(glow);
-  registry.track(glow.material as THREE.Material, 0.26);
 
   return {
     group,
-    fades: registry.fades,
     update(time, pointer) {
       const breathe = 1 + Math.sin(time * 0.8) * 0.018;
       shield.scale.setScalar(breathe);
@@ -283,7 +253,6 @@ function buildFlow(accent: string): ChapterWorld {
 /* ── 03 Live Env: wireframe city over a breathing grid ───────────────────── */
 
 function buildLiveEnv(accent: string): ChapterWorld {
-  const registry = fadeRegistry();
   const group = new THREE.Group();
   const floorY = -2.6;
 
@@ -296,8 +265,8 @@ function buildLiveEnv(accent: string): ChapterWorld {
 
   const gridGeometry = new THREE.BufferGeometry();
   gridGeometry.setAttribute(
-    'position',
-    new THREE.Float32BufferAttribute(positions, 3)
+    "position",
+    new THREE.Float32BufferAttribute(positions, 3),
   );
 
   const gridMaterial = new THREE.LineBasicNodeMaterial();
@@ -307,16 +276,11 @@ function buildLiveEnv(accent: string): ChapterWorld {
   gridMaterial.depthWrite = false;
   gridMaterial.blending = THREE.AdditiveBlending;
   gridMaterial.positionNode = positionLocal.add(
-    vec3(
-      0,
-      sin(positionLocal.z.mul(0.7).add(tslTime.mul(0.5))).mul(0.045),
-      0
-    )
+    vec3(0, sin(positionLocal.z.mul(0.7).add(tslTime.mul(0.5))).mul(0.045), 0),
   );
 
   const grid = new THREE.LineSegments(gridGeometry, gridMaterial);
   group.add(grid);
-  registry.track(gridMaterial, 0.18);
 
   const towerMaterial = new THREE.MeshBasicNodeMaterial();
   towerMaterial.colorNode = tslColor(accent);
@@ -329,7 +293,7 @@ function buildLiveEnv(accent: string): ChapterWorld {
   const towers = new THREE.InstancedMesh(
     new THREE.BoxGeometry(1, 1, 1),
     towerMaterial,
-    28
+    28,
   );
   const dummy = new THREE.Object3D();
   for (let index = 0; index < 28; index += 1) {
@@ -339,7 +303,7 @@ function buildLiveEnv(accent: string): ChapterWorld {
     dummy.position.set(
       (Math.random() - 0.5) * 22,
       floorY + height / 2,
-      -8 - Math.random() * 18
+      -8 - Math.random() * 18,
     );
     dummy.scale.set(width, height, depth);
     dummy.updateMatrix();
@@ -348,7 +312,6 @@ function buildLiveEnv(accent: string): ChapterWorld {
   towers.instanceMatrix.needsUpdate = true;
   towers.frustumCulled = false;
   group.add(towers);
-  registry.track(towerMaterial, 0.15);
 
   const monolithMaterial = new THREE.MeshBasicNodeMaterial();
   monolithMaterial.colorNode = tslColor(accent);
@@ -365,23 +328,20 @@ function buildLiveEnv(accent: string): ChapterWorld {
   ].map(([x, y, z], index) => {
     const monolith = new THREE.Mesh(
       new THREE.BoxGeometry(1 + index * 0.2, 2 + index * 0.45, 0.7),
-      monolithMaterial
+      monolithMaterial,
     );
     monolith.position.set(x, y, z);
     monolith.rotation.y = index * 0.7;
     group.add(monolith);
     return monolith;
   });
-  registry.track(monolithMaterial, 0.3);
 
   const horizon = glowPlane(accent, 28, 0.28);
   horizon.position.set(0, 3.2, -18);
   group.add(horizon);
-  registry.track(horizon.material as THREE.Material, 0.28);
 
   return {
     group,
-    fades: registry.fades,
     update(time, pointer) {
       monoliths.forEach((monolith, index) => {
         monolith.rotation.y = index * 0.7 + time * (0.08 + index * 0.03);
@@ -396,7 +356,6 @@ function buildLiveEnv(accent: string): ChapterWorld {
 /* ── 04 Alpha 6: glass shards lit by a fresnel rim ───────────────────────── */
 
 function buildAlpha(accent: string): ChapterWorld {
-  const registry = fadeRegistry();
   const group = new THREE.Group();
 
   const glassMaterial = new THREE.MeshBasicNodeMaterial();
@@ -404,15 +363,14 @@ function buildAlpha(accent: string): ChapterWorld {
   const rim = pow(oneMinus(facing), float(2));
   glassMaterial.colorNode = mix(
     tslColor(accent).mul(0.35),
-    tslColor('#ffffff'),
-    rim.mul(0.85)
+    tslColor("#ffffff"),
+    rim.mul(0.85),
   );
   glassMaterial.transparent = true;
   glassMaterial.opacity = 0.24;
   glassMaterial.depthWrite = false;
   glassMaterial.blending = THREE.AdditiveBlending;
   glassMaterial.side = THREE.DoubleSide;
-  registry.track(glassMaterial, 0.24);
 
   const edgeMaterial = new THREE.MeshBasicNodeMaterial();
   edgeMaterial.colorNode = tslColor(accent);
@@ -421,7 +379,6 @@ function buildAlpha(accent: string): ChapterWorld {
   edgeMaterial.opacity = 0.28;
   edgeMaterial.depthWrite = false;
   edgeMaterial.blending = THREE.AdditiveBlending;
-  registry.track(edgeMaterial, 0.28);
 
   const shards: Array<{ mesh: THREE.Mesh; spin: THREE.Vector3 }> = [];
 
@@ -433,7 +390,7 @@ function buildAlpha(accent: string): ChapterWorld {
 
     const mesh = new THREE.Mesh(
       geometry,
-      index % 3 === 0 ? edgeMaterial : glassMaterial
+      index % 3 === 0 ? edgeMaterial : glassMaterial,
     );
 
     // Ring the type instead of crossing it.
@@ -443,17 +400,17 @@ function buildAlpha(accent: string): ChapterWorld {
     mesh.position.set(
       Math.cos(theta) * radius,
       Math.sin(theta) * radius * 0.62,
-      -1.5 - Math.random() * 4
+      -1.5 - Math.random() * 4,
     );
     mesh.scale.set(
       0.32 + Math.random() * 0.62,
       0.26 + Math.random() * 0.7,
-      0.32 + Math.random() * 0.55
+      0.32 + Math.random() * 0.55,
     );
     mesh.rotation.set(
       Math.random() * Math.PI,
       Math.random() * Math.PI,
-      Math.random() * Math.PI
+      Math.random() * Math.PI,
     );
 
     group.add(mesh);
@@ -462,7 +419,7 @@ function buildAlpha(accent: string): ChapterWorld {
       spin: new THREE.Vector3(
         (Math.random() - 0.5) * 0.3,
         (Math.random() - 0.5) * 0.36,
-        (Math.random() - 0.5) * 0.22
+        (Math.random() - 0.5) * 0.22,
       ),
     });
   }
@@ -471,16 +428,13 @@ function buildAlpha(accent: string): ChapterWorld {
     addRing(group, 3.1, accent, 0.22, [1.2, 0.3, 0]),
     addRing(group, 4.2, accent, 0.12, [0.4, 1.1, 0.5]),
   ];
-  rings.forEach(({ material }) => registry.track(material));
 
   const glow = glowPlane(accent, 9, 0.3);
   glow.position.z = -3;
   group.add(glow);
-  registry.track(glow.material as THREE.Material, 0.3);
 
   return {
     group,
-    fades: registry.fades,
     update(time, pointer) {
       group.rotation.y = time * 0.045 + pointer.x * 0.16;
       group.rotation.x = pointer.y * 0.08;
@@ -510,30 +464,35 @@ export function SceneStage() {
     const markReady = () => {
       const store = useScrollerStore.getState();
       store.setPreloadProgress(1);
-      store.setBootPhase('ready');
+      store.setBootPhase("ready");
     };
 
-    if (!('gpu' in navigator)) {
+    if (!("gpu" in navigator)) {
       markReady();
       setFailed(true);
       return;
     }
 
-    const scenes: ChapterWorld[] = SECTIONS.map((section, index) =>
-      BUILDERS[index % BUILDERS.length](section.accent)
+    const worlds: ChapterWorld[] = SECTIONS.map((section, index) =>
+      BUILDERS[index % BUILDERS.length](section.accent),
     );
 
-    const scene = new THREE.Scene();
-    const background = new THREE.Color(SECTIONS[0].surface);
-    scene.background = background;
+    // Every chapter owns a scene and a camera. The compositor renders only the
+    // active one — or the two chapters mid-handoff — into its own pass texture.
+    const scenes = SECTIONS.map((section, index) => {
+      const scene = new THREE.Scene();
+      scene.background = new THREE.Color(section.surface);
+      scene.add(worlds[index].group);
+      return scene;
+    });
 
-    const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 120);
-    camera.position.set(0, 0, 9.6);
+    const cameras = SECTIONS.map(() => {
+      const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 120);
+      camera.position.set(0, 0, 9.6);
+      return camera;
+    });
 
-    scenes.forEach((world) => scene.add(world.group));
-
-    const palette = SECTIONS.map((section) => new THREE.Color(section.surface));
-    const blends = new THREE.Color();
+    const passes = scenes.map((scene, index) => pass(scene, cameras[index]));
 
     const pointer: Pointer = { x: 0, y: 0 };
     const target: Pointer = { x: 0, y: 0 };
@@ -543,30 +502,31 @@ export function SceneStage() {
       target.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
       target.y = ((event.clientY - rect.top) / rect.height) * 2 - 1;
     };
-    window.addEventListener('pointermove', onPointerMove, { passive: true });
+    window.addEventListener("pointermove", onPointerMove, { passive: true });
 
     let width = 1;
     let height = 1;
     let frame = 0;
     let renderer: THREE.WebGPURenderer | null = null;
+    let pipeline: SectionRenderPipeline | null = null;
     let disposed = false;
 
     const resize = () => {
       const rect = canvas.getBoundingClientRect();
       width = Math.max(1, rect.width);
       height = Math.max(1, rect.height);
-      camera.aspect = width / height;
-      camera.updateProjectionMatrix();
+      cameras.forEach((camera) => {
+        camera.aspect = width / height;
+        camera.updateProjectionMatrix();
+      });
       renderer?.setSize(width, height, false);
     };
 
     resize();
     const observer =
-      typeof ResizeObserver !== 'undefined'
-        ? new ResizeObserver(resize)
-        : null;
+      typeof ResizeObserver !== "undefined" ? new ResizeObserver(resize) : null;
     observer?.observe(canvas);
-    window.addEventListener('resize', resize);
+    window.addEventListener("resize", resize);
 
     const start = async () => {
       try {
@@ -574,7 +534,7 @@ export function SceneStage() {
           canvas,
           antialias: true,
           alpha: false,
-          powerPreference: 'high-performance',
+          powerPreference: "high-performance",
         });
         renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
         renderer.setSize(width, height, false);
@@ -582,7 +542,7 @@ export function SceneStage() {
         renderer.toneMappingExposure = 1.06;
         await renderer.init();
       } catch (error) {
-        console.warn('WebGPU unavailable, using the static stage:', error);
+        console.warn("WebGPU unavailable, using the static stage:", error);
         if (!disposed) {
           markReady();
           setFailed(true);
@@ -591,6 +551,19 @@ export function SceneStage() {
       }
 
       if (disposed || !renderer) return;
+
+      try {
+        pipeline = new SectionRenderPipeline(renderer, passes);
+        pipeline.prewarm();
+      } catch (error) {
+        console.warn("Scene compositor unavailable, using the static stage:", error);
+        pipeline = null;
+        if (!disposed) {
+          markReady();
+          setFailed(true);
+        }
+        return;
+      }
 
       let startedAt = performance.now();
       let firstFrame = true;
@@ -604,33 +577,46 @@ export function SceneStage() {
 
         const state = useScrollerStore.getState();
 
-        // Camera breathes and follows the pointer.
-        camera.position.x = pointer.x * 0.45;
-        camera.position.y = -pointer.y * 0.32;
-        camera.position.z = 9.6 + Math.sin(time * 0.24) * 0.12;
-        camera.lookAt(0, 0, 0);
-
-        // Chapter crossfade.
-        for (let index = 0; index < scenes.length; index += 1) {
-          const world = scenes[index];
+        for (let index = 0; index < worlds.length; index += 1) {
+          const world = worlds[index];
           const phase = getSectionPhaseAt(index, state.scrollProgress);
-          const activity = phase.activity;
+          const involved =
+            index === state.fromIndex || index === state.toIndex;
 
-          world.group.visible = activity > 0.002;
-          for (const fade of world.fades) {
-            fade.material.opacity = fade.base * activity;
-          }
-          if (world.group.visible) {
+          // Phase drives the handoff: scenes drift away as they leave and
+          // settle back to full presence in their hold window.
+          world.group.scale.setScalar(0.965 + phase.activity * 0.035);
+          world.group.position.y = (1 - phase.activity) * -0.22;
+
+          if (involved) {
             world.update(time, pointer);
           }
+
+          const camera = cameras[index];
+          const lift =
+            phase.phase === "enter"
+              ? 1 - phase.progress
+              : phase.phase === "exit"
+                ? phase.progress
+                : 0;
+
+          camera.position.x = pointer.x * 0.45;
+          camera.position.y = -pointer.y * 0.32;
+          camera.position.z =
+            9.6 + Math.sin(time * 0.24 + index) * 0.12 + lift * 0.9;
+          camera.lookAt(0, 0, 0);
         }
 
-        // Background follows the chapter surfaces.
-        blends.copy(palette[state.fromIndex]);
-        blends.lerp(palette[state.toIndex], state.transitionProgress);
-        background.copy(blends);
-
-        renderer?.render(scene, camera);
+        pipeline!.update(
+          {
+            fromIndex: state.fromIndex,
+            toIndex: state.toIndex,
+            isTransitioning: state.isTransitioning,
+            progress: state.transitionProgress,
+          },
+          time,
+        );
+        pipeline!.render();
 
         if (firstFrame) {
           firstFrame = false;
@@ -648,10 +634,10 @@ export function SceneStage() {
       disposed = true;
       window.cancelAnimationFrame(frame);
       observer?.disconnect();
-      window.removeEventListener('resize', resize);
-      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener("resize", resize);
+      window.removeEventListener("pointermove", onPointerMove);
 
-      scenes.forEach((world) => {
+      worlds.forEach((world) => {
         world.group.traverse((object) => {
           const mesh = object as THREE.Mesh;
           mesh.geometry?.dispose();
@@ -663,6 +649,14 @@ export function SceneStage() {
           }
         });
       });
+
+      try {
+        pipeline?.dispose();
+        passes.forEach((node) => node.dispose());
+      } catch {
+        // The compositor may not have finished compiling its first frame.
+      }
+      pipeline = null;
 
       try {
         renderer?.dispose();

@@ -15,6 +15,14 @@
       rel="stylesheet"
     />
     <title>Easy Fancy — a scroll-driven studio</title>
+    <script>
+      // The virtual dev server appends React Refresh registrations to modules.
+      // On a cold load the first module can evaluate before the refresh runtime
+      // publishes its globals, which would blank the page. Start with no-ops;
+      // the runtime replaces them as soon as it initialises.
+      window.$RefreshReg$ ||= () => {};
+      window.$RefreshSig$ ||= () => (type) => type;
+    </script>
     <script type="importmap">
       {
         "imports": {

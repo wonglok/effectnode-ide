@@ -20,7 +20,8 @@ falling back to Canvas 2D.
 
 Scroll (or drag on touch) to move between chapters. The numbered circles on the
 right jump directly to a chapter; the top line shows progress. Each chapter
-crossfades into the next when its hold ends.
+hands over to the next with a real shader transition — a liquid-glass wipe, a
+column melt, or a cross zoom — rather than a plain opacity fade.
 
 ## How it works
 
@@ -28,24 +29,30 @@ crossfades into the next when its hold ends.
   engine. It publishes a continuous scroll position; `goTo` eases toward a
   chapter with a critically damped spring.
 - `src/lib/scroll-phases.ts` — the chapter timeline: hold, blend, anchors.
-- `src/components/SceneStage.tsx` — one WebGPURenderer, one scene, four chapter
-  groups (instanced glints, displaced flow lines, wireframe city, fresnel
-  glass). Each group's materials fade with its scroll-phase activity.
+- `src/components/SceneStage.tsx` — one WebGPURenderer and four chapter
+  worlds (instanced glints, displaced flow lines, wireframe city, fresnel
+  glass). Each world has its own scene, camera, and render pass; the scroll
+  phase drifts and scales the world as it enters or leaves.
+- `src/lib/render-pipeline.ts` — composes the active pass through a
+  `RenderPipeline`, or blends the outgoing and incoming passes with a TSL
+  transition chosen per chapter pair. A shared finish adds the vignette and
+  animated film grain, and every handoff is prewarmed during the splash.
 - `src/components/Landing.tsx` — the fixed chrome: header, progress line,
-  numbered HUD, chapter copy crossfade, scroll cue, and footer.
+  numbered HUD, scroll cue, and footer.
 - `src/components/SplashScreen.tsx` — boot overlay; it leaves once the canvas
   has painted its first frames.
 - `src/lib/audio-engine.ts` — synthesised click and ambient pad (no audio files).
-- `src/sections/registry.ts` — the four chapters: copy, accents, surfaces.
+- `src/sections/registry.ts` — the four chapters: metadata, accents, surfaces.
 
 ## Editing
 
-- Change the copy or colours in `src/sections/registry.ts`.
+- Change the chapter accents and surface colours in `src/sections/registry.ts`.
 - Change a scene's drawing code in `src/components/SceneStage.tsx`.
-- Change the type scale in `src/components/landing.css`.
+- Change the chrome styling in `src/components/landing.css`.
 
 Every save hot-reloads the preview through the almostnode dev server.
 
 Imports include explicit `.ts` / `.tsx` extensions because the in-browser Vite
 server resolves modules from the virtual file system instead of running the real
-bundler resolver. React and Zustand are resolved through esm.sh by almostnode.
+bundler resolver. React, Zustand, and three.js resolve from esm.sh through the
+import map in `index.html`.

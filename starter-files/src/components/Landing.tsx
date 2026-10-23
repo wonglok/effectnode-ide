@@ -1,15 +1,15 @@
-import { useEffect, useRef, type CSSProperties } from 'react';
-import { SECTION_COUNT, SECTIONS, type SectionMeta } from '../sections/registry.ts';
+import { useEffect, useRef, type CSSProperties } from "react";
+import { SECTION_COUNT, SECTIONS } from "../sections/registry.ts";
 import {
   SCROLL_ROOT_ID,
   restoreScrollFromHash,
   trackPageScroll,
   useScrollerStore,
-} from '../store/useScrollerStore.ts';
-import { audioEngine } from '../lib/audio-engine.ts';
-import { PHASE_HOLD, getChapterAnchor } from '../lib/scroll-phases.ts';
-import { SceneStage } from './SceneStage.tsx';
-import { SplashScreen } from './SplashScreen.tsx';
+} from "../store/useScrollerStore.ts";
+import { audioEngine } from "../lib/audio-engine.ts";
+import { PHASE_HOLD, getChapterAnchor } from "../lib/scroll-phases.ts";
+import { SceneStage } from "./SceneStage.tsx";
+import { SplashScreen } from "./SplashScreen.tsx";
 
 /** Progress line under the header; subscribes without re-rendering the page. */
 function ScrollLine() {
@@ -76,9 +76,11 @@ function Header() {
           className="ef-sound"
           data-on={music}
           onClick={() => setMusic(!music)}
-          aria-label={music ? 'Mute background music' : 'Unmute background music'}
+          aria-label={
+            music ? "Mute background music" : "Unmute background music"
+          }
           aria-pressed={music}
-          title={music ? 'Mute music' : 'Unmute music'}
+          title={music ? "Mute music" : "Unmute music"}
         >
           <SoundIcon on={music} />
         </button>
@@ -117,13 +119,13 @@ function SceneHud() {
             type="button"
             className="ef-hud-button"
             data-active={active}
-            style={{ '--accent': section.accent } as CSSProperties}
+            style={{ "--accent": section.accent } as CSSProperties}
             onClick={() => goTo(section.index)}
             aria-label={`Go to scene ${section.index + 1}, ${section.name}`}
-            aria-current={active ? 'true' : undefined}
+            aria-current={active ? "true" : undefined}
             title={section.name}
           >
-            {String(section.index + 1).padStart(2, '0')}
+            {String(section.index + 1).padStart(2, "0")}
           </button>
         );
       })}
@@ -131,99 +133,10 @@ function SceneHud() {
   );
 }
 
-function ChapterLayer({
-  section,
-  opacity,
-  shift,
-  hidden,
-}: {
-  section: SectionMeta;
-  opacity: number;
-  shift: number;
-  hidden: boolean;
-}) {
-  const [first, second] = section.title.split('\n');
-  return (
-    <article
-      className="ef-chapter"
-      style={
-        {
-          '--accent': section.accent,
-          opacity,
-          transform: `translate3d(0, ${shift}px, 0)`,
-        } as CSSProperties
-      }
-      aria-hidden={hidden}
-    >
-      <p className="ef-chapter-kicker">
-        <span className="ef-chapter-number">{section.chapter}</span>
-        {section.eyebrow}
-      </p>
-      <h1 className="ef-chapter-title">
-        <span>{first}</span>
-        <em>{second}</em>
-      </h1>
-      <p className="ef-chapter-body">{section.body}</p>
-      <div className="ef-chapter-meta">
-        {section.meta.split(' / ').map((item) => (
-          <span key={item}>{item}</span>
-        ))}
-      </div>
-    </article>
-  );
-}
-
-function ChapterCopy() {
-  const activeIndex = useScrollerStore((state) => state.activeIndex);
-  const fromIndex = useScrollerStore((state) => state.fromIndex);
-  const toIndex = useScrollerStore((state) => state.toIndex);
-  const transitionProgress = useScrollerStore(
-    (state) => state.transitionProgress
-  );
-  const isTransitioning = useScrollerStore((state) => state.isTransitioning);
-
-  const fromSection = SECTIONS[fromIndex] ?? SECTIONS[0];
-  const toSection = SECTIONS[toIndex] ?? SECTIONS[0];
-
-  if (!isTransitioning || fromIndex === toIndex) {
-    const section = SECTIONS[activeIndex] ?? SECTIONS[0];
-    return (
-      <div className="ef-chapters">
-        <ChapterLayer
-          key={section.id}
-          section={section}
-          opacity={1}
-          shift={0}
-          hidden={false}
-        />
-      </div>
-    );
-  }
-
-  return (
-    <div className="ef-chapters">
-      <ChapterLayer
-        key={`from-${fromSection.id}`}
-        section={fromSection}
-        opacity={1 - transitionProgress}
-        shift={-18 * transitionProgress}
-        hidden={transitionProgress > 0.5}
-      />
-      <ChapterLayer
-        key={`to-${toSection.id}`}
-        section={toSection}
-        opacity={transitionProgress}
-        shift={18 * (1 - transitionProgress)}
-        hidden={transitionProgress <= 0.5}
-      />
-    </div>
-  );
-}
-
 function ScrollCue() {
   const scrollProgress = useScrollerStore((state) => state.scrollProgress);
   const bootPhase = useScrollerStore((state) => state.bootPhase);
-  const hidden = bootPhase !== 'ready' || scrollProgress > 0.16;
+  const hidden = bootPhase !== "ready" || scrollProgress > 0.16;
 
   return (
     <div className="ef-cue" data-hidden={hidden} aria-hidden="true">
@@ -259,7 +172,7 @@ export function Landing() {
   // keep the hash in step with the active chapter.
   useEffect(() => {
     const restore = () => {
-      if (useScrollerStore.getState().bootPhase !== 'ready') return;
+      if (useScrollerStore.getState().bootPhase !== "ready") return;
       restoreScrollFromHash();
     };
     restore();
@@ -275,24 +188,26 @@ export function Landing() {
         index?: unknown;
         from?: unknown;
       } | null;
-      if (!data || data.source !== 'easy-fancy') return;
+      if (!data || data.source !== "easy-fancy") return;
 
-      if (data.type === 'scroll-to-scene') {
+      if (data.type === "scroll-to-scene") {
         const index = Number(data.index);
-        if (!Number.isInteger(index) || index < 0 || index >= SECTION_COUNT) return;
+        if (!Number.isInteger(index) || index < 0 || index >= SECTION_COUNT)
+          return;
         useScrollerStore.getState().goTo(index);
         return;
       }
 
-      if (data.type === 'play-transition') {
+      if (data.type === "play-transition") {
         const from = Number(data.from);
-        if (!Number.isInteger(from) || from < 0 || from >= SECTION_COUNT - 1) return;
+        if (!Number.isInteger(from) || from < 0 || from >= SECTION_COUNT - 1)
+          return;
         useScrollerStore.getState().previewTransition(from);
       }
     };
 
-    window.addEventListener('message', navigate);
-    return () => window.removeEventListener('message', navigate);
+    window.addEventListener("message", navigate);
+    return () => window.removeEventListener("message", navigate);
   }, []);
 
   // Browsers unlock audio on the first gesture.
@@ -301,10 +216,10 @@ export function Landing() {
       const { soundFx, music } = useScrollerStore.getState();
       void audioEngine
         .start({ soundFx, music })
-        .catch((error) => console.warn('Audio unavailable:', error));
+        .catch((error) => console.warn("Audio unavailable:", error));
     };
-    window.addEventListener('pointerdown', startAudio, { once: true });
-    return () => window.removeEventListener('pointerdown', startAudio);
+    window.addEventListener("pointerdown", startAudio, { once: true });
+    return () => window.removeEventListener("pointerdown", startAudio);
   }, []);
 
   return (
@@ -313,7 +228,6 @@ export function Landing() {
         <SceneStage />
         <div className="ef-grain" aria-hidden="true" />
         <ScrollLine />
-        <ChapterCopy />
         <Header />
         <SceneHud />
         <ScrollCue />

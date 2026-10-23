@@ -64,6 +64,8 @@ Set `PORT` to change the production port. Saved projects live in
 - **Resize** the editor/preview and editor/terminal splits; layout preferences
   persist in `localStorage`.
 - **Open the preview in a new tab** and reload it without restarting the runtime.
+- **Download the project** with the top-bar **Download** button: every file in
+  the virtual file system is zipped under a folder named after the project.
 - **Ask the agent to change the project.** The Agent workbench reads, writes and
   replaces files in the same VFS, runs shell commands, and streams its answer
   into the chat while the preview hot-reloads (see below).
