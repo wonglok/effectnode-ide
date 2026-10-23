@@ -91,7 +91,12 @@ automatically during `npm run build`).
   persist in `localStorage`.
 - **Open the preview in a new tab** and reload it without restarting the runtime.
 - **Download the project** with the top-bar **Download** button: every file in
-  the virtual file system is zipped under a folder named after the project.
+  the virtual file system is zipped under a folder named after the project,
+  alongside a `forge.manifest.json` describing the archive format and version.
+- **Import a project** with **Import ZIP** next to Download. Forge reads and
+  validates the manifest first, rejects newer archive versions, then starts a
+  new unsaved project from the archive's files. Archives exported before the
+  manifest existed are rejected with an explanation.
 - **Ask the agent to change the project.** The Agent workbench reads, writes and
   replaces files in the same VFS, runs shell commands, and streams its answer
   into the chat while the preview hot-reloads (see below).
@@ -228,6 +233,26 @@ Snapshots are capped at 500 files / 2 MB, paths must be absolute, and
 Blob when `BLOB_READ_WRITE_TOKEN` is present. `/api/agent` returns the provider's
 SSE stream verbatim and reports upstream failures as JSON with a readable
 message.
+
+### Project archive format
+
+ZIP exports contain a root `forge.manifest.json` and a single project folder:
+
+```json
+{
+  "format": "forge-project",
+  "version": 1,
+  "appVersion": "0.1.0",
+  "projectName": "easy-fancy",
+  "root": "easy-fancy",
+  "exportedAt": "2026-10-24T00:00:00.000Z",
+  "fileCount": 19
+}
+```
+
+Importers accept versions up to the one they support and reject newer archives
+with an upgrade message. Bump `version` in `src/lib/project-archive.ts` when the
+layout changes, and keep the importer able to read every older version.
 
 ## Notes and limitations
 

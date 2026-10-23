@@ -26,6 +26,8 @@ interface ProjectState {
   open: (id: string) => Promise<boolean>;
   remove: (id: string) => Promise<boolean>;
   newProject: (name?: string) => Promise<void>;
+  /** Replace the workspace with files from a validated Forge ZIP archive. */
+  importProject: (name: string, files: Record<string, string>) => Promise<void>;
 }
 
 export const useProjectStore = create<ProjectState>((set, get) => ({
@@ -170,5 +172,24 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     });
     runtime.log('info', 'Started a fresh project from the starter template');
     useUiStore.getState().toast('New project ready');
+  },
+
+  importProject: async (name, files) => {
+    useWorkspaceStore.getState().flush();
+    await restartWithFiles(files);
+    useWorkspaceStore.getState().loadFiles(files);
+    localStorage.removeItem(CURRENT_PROJECT_KEY);
+
+    const projectName = name.trim() || 'imported-project';
+    set({
+      currentId: null,
+      name: projectName,
+      createdAt: null,
+      updatedAt: null,
+    });
+
+    const fileCount = Object.keys(files).length;
+    runtime.log('success', `Imported “${projectName}” · ${fileCount} files from ZIP`);
+    useUiStore.getState().toast(`Imported “${projectName}”`);
   },
 }));

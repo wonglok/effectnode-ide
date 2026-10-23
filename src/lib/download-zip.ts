@@ -1,5 +1,12 @@
 import { strToU8, zipSync } from 'fflate';
 import { runtime } from './runtime';
+import {
+  APP_VERSION,
+  ARCHIVE_FORMAT,
+  ARCHIVE_VERSION,
+  MANIFEST_FILENAME,
+  type ProjectArchiveManifest,
+} from './project-archive';
 import { useProjectStore } from '@/store/projects';
 import { useUiStore } from '@/store/ui';
 import { useWorkspaceStore } from '@/store/workspace';
@@ -32,8 +39,20 @@ export function downloadProjectZip(): void {
     return;
   }
 
-  const folder = archiveName(useProjectStore.getState().name);
+  const projectName = useProjectStore.getState().name;
+  const folder = archiveName(projectName);
   const entries: Record<string, Uint8Array> = {};
+
+  const manifest: ProjectArchiveManifest = {
+    format: ARCHIVE_FORMAT,
+    version: ARCHIVE_VERSION,
+    appVersion: APP_VERSION,
+    projectName: projectName.replace(/\(unsaved\)/gi, '').trim() || folder,
+    root: folder,
+    exportedAt: new Date().toISOString(),
+    fileCount: paths.length,
+  };
+  entries[MANIFEST_FILENAME] = strToU8(JSON.stringify(manifest, null, 2));
 
   for (const path of paths) {
     const relative = path.replace(/^\/+/, '');
