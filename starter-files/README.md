@@ -13,7 +13,8 @@ falling back to Canvas 2D.
 
 ## The experience
 
-- **01 Kinetic** — a field of orbiting particles and light.
+- **01 Kinetic** — a field of orbiting particles and an extruded
+  “Welcome to my template” title drawn with `TextGeometry`.
 - **02 Flow Shield** — force lines bending around a silhouette.
 - **03 Live Env** — a wireframe skyline, receding grid, and floating monoliths.
 - **04 Alpha 6** — glass shards built from gradients and geometry.
@@ -21,7 +22,7 @@ falling back to Canvas 2D.
 Scroll (or drag on touch) to move between chapters. The numbered circles on the
 right jump directly to a chapter; the top line shows progress. Each chapter
 hands over to the next with a real shader transition — a liquid-glass wipe, a
-column melt, or a cross zoom — rather than a plain opacity fade.
+page curl, or a cross zoom — rather than a plain opacity fade.
 
 ## How it works
 
@@ -30,9 +31,12 @@ column melt, or a cross zoom — rather than a plain opacity fade.
   chapter with a critically damped spring.
 - `src/lib/scroll-phases.ts` — the chapter timeline: hold, blend, anchors.
 - `src/components/SceneStage.tsx` — one WebGPURenderer and four chapter
-  worlds (instanced glints, displaced flow lines, wireframe city, fresnel
-  glass). Each world has its own scene, camera, and render pass; the scroll
-  phase drifts and scales the world as it enters or leaves.
+  worlds (instanced glints plus the extruded title, displaced flow lines,
+  wireframe city, fresnel glass). Each world has its own scene, camera, and
+  render pass; the scroll phase drifts and scales the world as it enters or
+  leaves.
+- `src/lib/helvetica.ts` — the Helvetiker outline bundled for `TextGeometry`,
+  so the title needs no font request at runtime.
 - `src/lib/render-pipeline.ts` — composes the active pass through a
   `RenderPipeline`, or blends the outgoing and incoming passes with a TSL
   transition chosen per chapter pair. A shared finish adds the vignette and

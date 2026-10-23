@@ -20,6 +20,7 @@ import stylesCss from '../../starter-files/src/styles.css?raw';
 import registryTs from '../../starter-files/src/sections/registry.ts?raw';
 import scrollPhasesTs from '../../starter-files/src/lib/scroll-phases.ts?raw';
 import renderPipelineTs from '../../starter-files/src/lib/render-pipeline.ts?raw';
+import helveticaTs from '../../starter-files/src/lib/helvetica.ts?raw';
 import audioEngineTs from '../../starter-files/src/lib/audio-engine.ts?raw';
 import scrollerStoreTs from '../../starter-files/src/store/useScrollerStore.ts?raw';
 import landingTsx from '../../starter-files/src/components/Landing.tsx?raw';
@@ -43,6 +44,7 @@ export const STARTER_FILES: Record<string, string> = {
   '/src/sections/registry.ts': registryTs,
   '/src/lib/scroll-phases.ts': scrollPhasesTs,
   '/src/lib/render-pipeline.ts': renderPipelineTs,
+  '/src/lib/helvetica.ts': helveticaTs,
   '/src/lib/audio-engine.ts': audioEngineTs,
   '/src/store/useScrollerStore.ts': scrollerStoreTs,
   '/src/components/Landing.tsx': landingTsx,
