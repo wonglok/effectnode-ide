@@ -48,6 +48,31 @@ npm start          # serves .output on http://localhost:3000
 Set `PORT` to change the production port. Saved projects live in
 `data/projects/` by default; override with `FORGE_DATA_DIR`.
 
+### UI password
+
+Set `FORGE_PASSWORD` to require a password before the IDE mounts (the local
+`.env` in this checkout uses `12123`). The server compares it in constant time,
+sets an HttpOnly `forge_unlock` cookie for 30 days, and exposes the gate through
+`GET/POST /api/auth`. Leave the variable empty to disable the gate. This is a
+simple shared-secret UI lock, not a multi-user account system — API routes are
+not individually authenticated.
+
+### Deploying to Vercel
+
+Nitro runs as one Vercel Function. Set `FORGE_PASSWORD` in the project's
+environment variables; `.env` files are not deployed.
+
+Project snapshots need durable storage because a serverless filesystem is
+read-only and ephemeral. Connect a **Vercel Blob** store to the project; Vercel
+injects `BLOB_READ_WRITE_TOKEN` and the API stores each project at
+`projects/<id>.json` in the store. Without a token, `/api/projects` returns an
+actionable error instead of writing to a read-only disk. (You can also set
+`FORGE_DATA_DIR` to a writable mounted volume, but `/tmp` is not persistent.)
+
+Handlers live in `server/routes/api` rather than a root `api/` directory, which
+Vercel reserves. Build with the Nitro Vercel preset (Nitro detects Vercel
+automatically during `npm run build`).
+
 ## What you can do
 
 - **Edit files** in a CodeMirror editor with TS/TSX, JSX, CSS, HTML, JSON and
@@ -60,7 +85,8 @@ Set `PORT` to change the production port. Saved projects live in
 - **Run shell commands** against the same VFS: `ls`, `cd`, `cat`, `tree`,
   `echo "…" > file`, `mkdir`, `touch`, `rm -r`, `mv`, `cp`, `open`, `save`.
 - **Save and restore projects** through the Nitro API. Snapshots are JSON files
-  under `data/projects/`, and the last opened project is restored on refresh.
+  under `data/projects/` (or Vercel Blob in production), and the last opened
+  project is restored on refresh.
 - **Resize** the editor/preview and editor/terminal splits; layout preferences
   persist in `localStorage`.
 - **Open the preview in a new tab** and reload it without restarting the runtime.
@@ -177,8 +203,8 @@ tree, tabs, buffers, logs, project metadata, and layout.
 │   │   └── api.ts          # Nitro client
 │   └── store/              # runtime · workspace · projects · ui · agent (Zustand)
 ├── server/
-│   ├── api/                # Nitro routes (/api/health, /api/projects, /api/agent)
-│   └── utils/projects.ts   # validation + JSON storage
+│   ├── routes/api/         # Nitro routes (/api/health, /api/projects, /api/agent, /api/auth)
+│   └── utils/              # password gate + project validation/storage
 ├── shared/types.ts
 └── data/projects/          # created at runtime, git-ignored
 ```
@@ -188,6 +214,8 @@ tree, tabs, buffers, logs, project metadata, and layout.
 | Method | Route               | Description                              |
 | ------ | ------------------- | ---------------------------------------- |
 | GET    | `/api/health`       | Service health                           |
+| GET    | `/api/auth`         | Whether a password is required/unlocked  |
+| POST   | `/api/auth`         | Exchange `{ password }` for an unlock cookie |
 | GET    | `/api/projects`     | List project metadata                    |
 | POST   | `/api/projects`     | Create/update `{ id?, name, files }`     |
 | GET    | `/api/projects/:id` | Fetch a full snapshot                    |
@@ -196,8 +224,10 @@ tree, tabs, buffers, logs, project metadata, and layout.
 | POST   | `/api/agent`        | Stream a chat completion from the provider |
 
 Snapshots are capped at 500 files / 2 MB, paths must be absolute, and
-`node_modules` is rejected. `/api/agent` returns the provider's SSE stream
-verbatim and reports upstream failures as JSON with a readable message.
+`node_modules` is rejected. Project JSON is stored on disk locally and in Vercel
+Blob when `BLOB_READ_WRITE_TOKEN` is present. `/api/agent` returns the provider's
+SSE stream verbatim and reports upstream failures as JSON with a readable
+message.
 
 ## Notes and limitations
 

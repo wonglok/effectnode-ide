@@ -1,5 +1,5 @@
 import { defineEventHandler } from 'h3';
-import type { HealthResponse } from '../../shared/types';
+import type { HealthResponse } from '../../../shared/types';
 
 export default defineEventHandler((): HealthResponse => ({
   ok: true,

@@ -1,6 +1,6 @@
 import { createError, defineEventHandler, readBody } from 'h3';
-import type { ProjectMeta, SaveProjectPayload } from '../../shared/types';
-import { ProjectValidationError, saveProject } from '../utils/projects';
+import type { ProjectMeta, SaveProjectPayload } from '../../../shared/types';
+import { ProjectValidationError, saveProject } from '../../utils/projects';
 
 export default defineEventHandler(async (event): Promise<ProjectMeta> => {
   const body = await readBody<SaveProjectPayload>(event);

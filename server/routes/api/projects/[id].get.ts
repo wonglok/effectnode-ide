@@ -1,6 +1,6 @@
 import { createError, defineEventHandler, getRouterParam } from 'h3';
-import type { ProjectSnapshot } from '../../../shared/types';
-import { getProject, ProjectValidationError } from '../../utils/projects';
+import type { ProjectSnapshot } from '../../../../shared/types';
+import { getProject, ProjectValidationError } from '../../../utils/projects';
 
 export default defineEventHandler(async (event): Promise<ProjectSnapshot> => {
   const id = getRouterParam(event, 'id');

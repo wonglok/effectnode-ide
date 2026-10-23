@@ -117,8 +117,8 @@ export default defineConfig({
   },
   nitro: {
     compatibilityDate: '2026-10-23',
-    // Nitro scans <srcDir>/<apiDir>; keep the server code in ./server.
-    apiDir: 'server/api',
+    // Vercel reserves a root `/api` directory, so handlers live under
+    // `server/routes/api` and Nitro emits them as normal /api routes.
     routesDir: 'server/routes',
     routeRules: {
       '/**': { headers: crossOriginHeaders },

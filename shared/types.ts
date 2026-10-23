@@ -77,3 +77,11 @@ export interface AgentStatusResponse {
   defaultModel: string;
 }
 
+/** Whether the UI needs a password and whether this browser has unlocked it. */
+export interface AuthStatusResponse {
+  required: boolean;
+  unlocked: boolean;
+  /** Present when an unlock attempt was rejected. */
+  message?: string;
+}
+

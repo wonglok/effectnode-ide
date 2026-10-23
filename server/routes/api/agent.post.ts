@@ -1,5 +1,5 @@
 import { createError, defineEventHandler, getHeader, readBody } from 'h3';
-import type { AgentProxyRequest } from '../../shared/types';
+import type { AgentProxyRequest } from '../../../shared/types';
 
 const MAX_MESSAGES = 80;
 const MAX_MESSAGE_CHARS = 300_000;

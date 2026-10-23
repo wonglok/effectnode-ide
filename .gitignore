@@ -1,5 +1,6 @@
 node_modules/
 .output/
+.vercel/
 .nitro/
 node_modules/.nitro/
 data/

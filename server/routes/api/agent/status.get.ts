@@ -1,5 +1,5 @@
 import { defineEventHandler } from 'h3';
-import type { AgentStatusResponse } from '../../../shared/types';
+import type { AgentStatusResponse } from '../../../../shared/types';
 
 export default defineEventHandler((): AgentStatusResponse => ({
   configured: Boolean(process.env.AGENT_API_KEY || process.env.OPENAI_API_KEY),

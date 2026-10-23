@@ -1,6 +1,6 @@
 import { createError, defineEventHandler, getRouterParam } from 'h3';
-import type { DeleteResponse } from '../../../shared/types';
-import { deleteProject, ProjectValidationError } from '../../utils/projects';
+import type { DeleteResponse } from '../../../../shared/types';
+import { deleteProject, ProjectValidationError } from '../../../utils/projects';
 
 export default defineEventHandler(async (event): Promise<DeleteResponse> => {
   const id = getRouterParam(event, 'id');
