@@ -1,0 +1,62 @@
+import { CircleHelp, Files, FolderKanban, Sparkles, SquareTerminal } from 'lucide-react';
+import { useRuntimeStore } from '@/store/runtime';
+import { useUiStore } from '@/store/ui';
+
+export function ActivityRail() {
+  const explorerOpen = useUiStore((state) => state.explorerOpen);
+  const terminalOpen = useUiStore((state) => state.terminalOpen);
+  const terminalTab = useUiStore((state) => state.terminalTab);
+  const projectsOpen = useUiStore((state) => state.projectsOpen);
+  const mainView = useUiStore((state) => state.mainView);
+  const toggleExplorer = useUiStore((state) => state.toggleExplorer);
+  const setTerminalTab = useUiStore((state) => state.setTerminalTab);
+  const setMainView = useUiStore((state) => state.setMainView);
+  const setProjectsOpen = useUiStore((state) => state.setProjectsOpen);
+  const setShortcutsOpen = useUiStore((state) => state.setShortcutsOpen);
+  const status = useRuntimeStore((state) => state.status);
+
+  return (
+    <nav className="rail" aria-label="Activity">
+      <div className="rail-group">
+        <button
+          className={`rail-button ${explorerOpen ? 'is-active' : ''}`}
+          onClick={toggleExplorer}
+          title="Explorer (⌘B)"
+        >
+          <Files size={18} />
+        </button>
+        <button
+          className={`rail-button ${projectsOpen ? 'is-active' : ''}`}
+          onClick={() => setProjectsOpen(true)}
+          title="Projects (⌘K)"
+        >
+          <FolderKanban size={18} />
+        </button>
+        <button
+          className={`rail-button ${terminalOpen && terminalTab === 'console' ? 'is-active' : ''}`}
+          onClick={() => setTerminalTab('console')}
+          title="Runtime console (⌘J)"
+        >
+          <SquareTerminal size={18} />
+        </button>
+        <button
+          className={`rail-button ${mainView === 'agent' ? 'is-active' : ''}`}
+          onClick={() => setMainView('agent')}
+          title="Agent workbench (⇧⌘A)"
+        >
+          <Sparkles size={18} />
+        </button>
+      </div>
+
+      <div className="rail-group rail-bottom">
+        <button className="rail-button" onClick={() => setShortcutsOpen(true)} title="Help & shortcuts">
+          <CircleHelp size={17} />
+        </button>
+        <div className="rail-wordmark" aria-hidden="true">
+          almostnode
+        </div>
+        <div className={`rail-led status-${status}`} title={`Runtime ${status}`} />
+      </div>
+    </nav>
+  );
+}

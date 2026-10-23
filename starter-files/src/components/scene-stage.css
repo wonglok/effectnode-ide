@@ -1,0 +1,33 @@
+.ef-stage {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.ef-stage-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Shown only when WebGPU cannot start; no canvas is created in that case. */
+.ef-stage-fallback {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 60% 45% at 50% 42%, rgba(216, 255, 99, 0.09), transparent 70%),
+    radial-gradient(ellipse 70% 50% at 50% 72%, rgba(38, 174, 255, 0.08), transparent 72%),
+    #030403;
+}
+
+.ef-stage-fallback::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(243, 240, 231, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(243, 240, 231, 0.035) 1px, transparent 1px);
+  background-size: 54px 54px;
+  mask-image: radial-gradient(ellipse at 50% 55%, black 0%, transparent 72%);
+}
