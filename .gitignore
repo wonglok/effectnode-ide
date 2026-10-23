@@ -11,3 +11,4 @@ data/
 
 .env.local
 .tmp*
+.claude/temp

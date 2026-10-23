@@ -2,7 +2,6 @@ import { useEffect, useRef, type CSSProperties } from "react";
 import { SECTION_COUNT, SECTIONS } from "../sections/registry.ts";
 import {
   SCROLL_ROOT_ID,
-  restoreScrollFromHash,
   trackPageScroll,
   useScrollerStore,
 } from "../store/useScrollerStore.ts";
@@ -167,17 +166,6 @@ function Footer() {
 
 export function Landing() {
   useEffect(() => trackPageScroll(), []);
-
-  // Restore the chapter named by the URL hash once the canvas is warm, then
-  // keep the hash in step with the active chapter.
-  useEffect(() => {
-    const restore = () => {
-      if (useScrollerStore.getState().bootPhase !== "ready") return;
-      restoreScrollFromHash();
-    };
-    restore();
-    return useScrollerStore.subscribe(restore);
-  }, []);
 
   // An embedding host can drive the story with postMessage.
   useEffect(() => {

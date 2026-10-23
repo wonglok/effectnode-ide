@@ -24,6 +24,7 @@ import helveticaTs from '../../starter-files/src/lib/helvetica.ts?raw';
 import audioEngineTs from '../../starter-files/src/lib/audio-engine.ts?raw';
 import scrollerStoreTs from '../../starter-files/src/store/useScrollerStore.ts?raw';
 import landingTsx from '../../starter-files/src/components/Landing.tsx?raw';
+import storyRouterTsx from '../../starter-files/src/components/StoryRouter.tsx?raw';
 import landingCss from '../../starter-files/src/components/landing.css?raw';
 import sceneStageTsx from '../../starter-files/src/components/SceneStage.tsx?raw';
 import sceneStageCss from '../../starter-files/src/components/scene-stage.css?raw';
@@ -48,6 +49,7 @@ export const STARTER_FILES: Record<string, string> = {
   '/src/lib/audio-engine.ts': audioEngineTs,
   '/src/store/useScrollerStore.ts': scrollerStoreTs,
   '/src/components/Landing.tsx': landingTsx,
+  '/src/components/StoryRouter.tsx': storyRouterTsx,
   '/src/components/landing.css': landingCss,
   '/src/components/SceneStage.tsx': sceneStageTsx,
   '/src/components/scene-stage.css': sceneStageCss,

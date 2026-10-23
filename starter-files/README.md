@@ -2,8 +2,8 @@
 
 A four-chapter, scroll-driven landing page that runs entirely inside the Forge
 preview. No video and no image assets: the scenes are real-time three.js
-WebGPURenderer worlds shaded with TSL, and the story is steered by a small
-Zustand store.
+WebGPURenderer worlds shaded with TSL, the story is steered by a small Zustand
+store, and React Router's `HashRouter` keeps the URL in step with the chapter.
 
 `three` (runtime) and `@types/three` (types) are installed and mapped through
 the import map, so `three`, `three/webgpu`, `three/tsl`, and
@@ -23,7 +23,8 @@ falling back to Canvas 2D.
 Scroll (or drag on touch) to move between chapters. The numbered circles on the
 right jump directly to a chapter; the top line shows progress. Each chapter
 hands over to the next with a real shader transition — a liquid-glass wipe, a
-page curl, or a cross zoom — rather than a plain opacity fade.
+page curl, or a cross zoom — rather than a plain opacity fade. The hash mirrors
+the active chapter (`#/scene-02`), and reloading resumes at that chapter.
 
 ## How it works
 
@@ -31,6 +32,9 @@ page curl, or a cross zoom — rather than a plain opacity fade.
   engine. It publishes a continuous scroll position; `goTo` eases toward a
   chapter with a critically damped spring.
 - `src/lib/scroll-phases.ts` — the chapter timeline: hold, blend, anchors.
+- `src/components/StoryRouter.tsx` — bridges `HashRouter` and the scroll store:
+  an active-chapter change rewrites the hash, and a `/scene-02` URL (including
+  the legacy `#scene-02` form) snaps the engine to that chapter on load.
 - `src/components/SceneStage.tsx` — one WebGPURenderer and four chapter
   worlds (instanced glints plus the glass title, displaced flow lines,
   wireframe city, fresnel shards). Each world has its own scene, camera, and
@@ -60,5 +64,5 @@ Every save hot-reloads the preview through the almostnode dev server.
 
 Imports include explicit `.ts` / `.tsx` extensions because the in-browser Vite
 server resolves modules from the virtual file system instead of running the real
-bundler resolver. React, Zustand, and three.js resolve from esm.sh through the
-import map in `index.html`.
+bundler resolver. React, Zustand, React Router, and three.js resolve from esm.sh
+through the import map in `index.html`.

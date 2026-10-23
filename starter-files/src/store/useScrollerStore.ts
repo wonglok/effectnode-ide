@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { SECTION_COUNT, SECTIONS } from '../sections/registry.ts';
+import { SECTION_COUNT } from '../sections/registry.ts';
 import { audioEngine } from '../lib/audio-engine.ts';
 import {
   CHAPTER_SPAN,
@@ -26,49 +26,6 @@ const clampProgress = (value: number) =>
 
 const clamp01 = (value: number) => Math.min(1, Math.max(0, value));
 
-const hashForIndex = (index: number) => {
-  const section = SECTIONS[index];
-  return section ? `#scene-${section.chapter}` : '';
-};
-
-function indexForHash(hash: string) {
-  const match = /^#scene-(\d+)$/.exec(hash);
-  if (!match) return -1;
-  return SECTIONS.findIndex((section) => section.chapter === match[1]);
-}
-
-/** Hash syncing waits until the boot sequence has restored the arrival hash. */
-let hashSyncEnabled = false;
-
-function syncHash(index: number) {
-  if (!hashSyncEnabled || typeof window === 'undefined') return;
-  const next = hashForIndex(index);
-  if (!next || window.location.hash === next) return;
-  window.history.replaceState(window.history.state, '', next);
-}
-
-/** Jump to the chapter named by the URL once the splash is ready. */
-export function restoreScrollFromHash() {
-  if (typeof window === 'undefined' || hashSyncEnabled) return;
-  hashSyncEnabled = true;
-
-  const index = indexForHash(window.location.hash);
-  if (index < 0) {
-    syncHash(useScrollerStore.getState().activeIndex);
-    return;
-  }
-
-  if (engine.pixelsPerSection <= 1) {
-    engine.pixelsPerSection = measureSectionPixels();
-  }
-  const progress = getChapterAnchor(index);
-  engine.scrollPixel = clampScrollPixel(progress * engine.pixelsPerSection);
-  engine.scrollTargetPixel = engine.scrollPixel;
-  engine.scrollVelocity = 0;
-  engine.scrollMotion = 'idle';
-  publishScroll();
-}
-
 type ScrollerState = {
   /** Continuous scroll position in phase units. */
   scrollProgress: number;
@@ -87,6 +44,8 @@ type ScrollerState = {
   setBootPhase: (phase: BootPhase) => void;
   setPreloadProgress: (progress: number) => void;
   goTo: (index: number) => void;
+  /** Snap directly to a chapter, used when the router restores a URL. */
+  jumpTo: (index: number) => void;
   previewTransition: (index: number) => void;
   setSoundFx: (enabled: boolean) => void;
   setMusic: (enabled: boolean) => void;
@@ -319,7 +278,6 @@ function createScrollerStore() {
           transitionProgress: 0,
           isTransitioning: false,
         });
-        syncHash(activeIndex);
         return;
       }
 
@@ -331,7 +289,6 @@ function createScrollerStore() {
         transitionProgress: blend,
         isTransitioning: true,
       });
-      syncHash(activeIndex);
     },
 
     setBootPhase: (bootPhase) => set({ bootPhase }),
@@ -341,6 +298,19 @@ function createScrollerStore() {
     goTo: (index) => {
       audioEngine.playUiClick();
       scrollVirtualTo(getChapterAnchor(Math.max(0, Math.min(SECTION_COUNT - 1, index))));
+    },
+
+    jumpTo: (index) => {
+      const safe = Math.max(0, Math.min(SECTION_COUNT - 1, Math.round(index)));
+      if (engine.pixelsPerSection <= 1) {
+        engine.pixelsPerSection = measureSectionPixels();
+      }
+      const progress = getChapterAnchor(safe);
+      engine.scrollPixel = clampScrollPixel(progress * engine.pixelsPerSection);
+      engine.scrollTargetPixel = engine.scrollPixel;
+      engine.scrollVelocity = 0;
+      engine.scrollMotion = 'idle';
+      publishScroll();
     },
 
     previewTransition: (index) => {
@@ -470,18 +440,10 @@ export function trackPageScroll() {
     engine.scrollMotion = 'idle';
   };
 
-  const onHashChange = () => {
-    const index = indexForHash(window.location.hash);
-    if (index < 0) return;
-    if (index === useScrollerStore.getState().activeIndex) return;
-    scrollVirtualTo(getChapterAnchor(index));
-  };
-
   startScrollLoop();
 
   root.addEventListener('wheel', onWheel, { passive: false });
   window.addEventListener('resize', onResize, { passive: true });
-  window.addEventListener('hashchange', onHashChange);
   root.addEventListener('touchstart', onTouchStart, { passive: true });
   root.addEventListener('touchmove', onTouchMove, { passive: false });
   root.addEventListener('touchend', onTouchEnd, { passive: true });
@@ -493,7 +455,6 @@ export function trackPageScroll() {
     if (engine.scrollRoot === root) engine.scrollRoot = null;
     root.removeEventListener('wheel', onWheel);
     window.removeEventListener('resize', onResize);
-    window.removeEventListener('hashchange', onHashChange);
     root.removeEventListener('touchstart', onTouchStart);
     root.removeEventListener('touchmove', onTouchMove);
     root.removeEventListener('touchend', onTouchEnd);
