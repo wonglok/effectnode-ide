@@ -1,7 +1,11 @@
-import { CircleHelp, Files, FolderKanban, Sparkles, SquareTerminal } from 'lucide-react';
-import { useAgentStore } from '@/store/agent';
-import { useRuntimeStore } from '@/store/runtime';
-import { useUiStore } from '@/store/ui';
+import {
+  CircleHelp,
+  Files,
+  FolderKanban,
+  SquareTerminal,
+} from "lucide-react";
+import { useRuntimeStore } from "@/store/runtime";
+import { useUiStore } from "@/store/ui";
 
 export function ActivityRail() {
   const explorerOpen = useUiStore((state) => state.explorerOpen);
@@ -12,56 +16,49 @@ export function ActivityRail() {
   const setTerminalTab = useUiStore((state) => state.setTerminalTab);
   const setProjectsOpen = useUiStore((state) => state.setProjectsOpen);
   const setShortcutsOpen = useUiStore((state) => state.setShortcutsOpen);
-  const agentRunning = useAgentStore((state) => state.runStatus === 'running');
   const status = useRuntimeStore((state) => state.status);
-
-  const focusAgent = () => {
-    const input = document.getElementById('agent-input') as HTMLTextAreaElement | null;
-    input?.scrollIntoView({ block: 'nearest' });
-    input?.focus();
-  };
 
   return (
     <nav className="rail" aria-label="Activity">
       <div className="rail-group">
         <button
-          className={`rail-button ${explorerOpen ? 'is-active' : ''}`}
+          className={`rail-button ${explorerOpen ? "is-active" : ""}`}
           onClick={toggleExplorer}
           title="Explorer (⌘B)"
         >
           <Files size={18} />
         </button>
         <button
-          className={`rail-button ${projectsOpen ? 'is-active' : ''}`}
+          className={`rail-button ${projectsOpen ? "is-active" : ""}`}
           onClick={() => setProjectsOpen(true)}
           title="Projects (⌘K)"
         >
           <FolderKanban size={18} />
         </button>
         <button
-          className={`rail-button ${terminalOpen && terminalTab === 'console' ? 'is-active' : ''}`}
-          onClick={() => setTerminalTab('console')}
+          className={`rail-button ${terminalOpen && terminalTab === "console" ? "is-active" : ""}`}
+          onClick={() => setTerminalTab("console")}
           title="Runtime console (⌘J)"
         >
           <SquareTerminal size={18} />
         </button>
-        <button
-          className={`rail-button ${agentRunning ? 'is-active' : ''}`}
-          onClick={focusAgent}
-          title="Agent chat (⇧⌘A)"
-        >
-          <Sparkles size={18} />
-        </button>
       </div>
 
       <div className="rail-group rail-bottom">
-        <button className="rail-button" onClick={() => setShortcutsOpen(true)} title="Help & shortcuts">
+        <button
+          className="rail-button"
+          onClick={() => setShortcutsOpen(true)}
+          title="Help & shortcuts"
+        >
           <CircleHelp size={17} />
         </button>
         <div className="rail-wordmark" aria-hidden="true">
           almostnode
         </div>
-        <div className={`rail-led status-${status}`} title={`Runtime ${status}`} />
+        <div
+          className={`rail-led status-${status}`}
+          title={`Runtime ${status}`}
+        />
       </div>
     </nav>
   );
