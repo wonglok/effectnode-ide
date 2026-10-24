@@ -1,4 +1,5 @@
 import { defineEventHandler } from 'h3';
+import { CLAUDE_AGENT, CLAUDE_ANTHROPIC_UPSTREAM } from '../../../../shared/claude';
 import type { AgentStatusResponse } from '../../../../shared/types';
 import { authGuard } from '../../../utils/auth';
 
@@ -9,7 +10,6 @@ function credential(): {
   const candidates: Array<[AgentStatusResponse['keySource'], string | undefined]> = [
     ['DEEPSEEK_API_KEY', process.env.DEEPSEEK_API_KEY],
     ['AGENT_API_KEY', process.env.AGENT_API_KEY],
-    ['OPENAI_API_KEY', process.env.OPENAI_API_KEY],
   ];
   for (const [keySource, value] of candidates) {
     const key = (value ?? '').trim();
@@ -36,5 +36,18 @@ export default defineEventHandler(async (event) => {
     keySource,
     defaultBaseUrl: '/api/deepseek/chat/completions',
     defaultModel: model,
+    claude: {
+      // The Anthropic proxy deliberately does not use the OpenAI fallback.
+      configured: Boolean(
+        process.env.DEEPSEEK_API_KEY?.trim() ||
+          process.env.AGENT_API_KEY?.trim()
+      ),
+      model: CLAUDE_AGENT.model,
+      proxyUrl: CLAUDE_AGENT.proxyUrl,
+      upstreamBaseUrl:
+        process.env.DEEPSEEK_ANTHROPIC_BASE_URL?.trim() ||
+        CLAUDE_ANTHROPIC_UPSTREAM,
+      effort: CLAUDE_AGENT.effort,
+    },
   };
 });

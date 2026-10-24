@@ -120,29 +120,67 @@ Keyboard shortcuts: `⌘S` save project · `⌘B` explorer · `⌘J` panel ·
 
 The agent runs **in this tab**. The browser owns the conversation, the tool
 loop, and every file operation; the only thing that leaves the tab is the model
-request, sent to a same-origin REST proxy:
+request, sent to a same-origin REST proxy. Two frontend loops share the same
+tools, thinking log, task plan, undo snapshot, and "Keep going" card:
 
 ```
-browser agent ── POST /api/deepseek/chat/completions (Forge JWT) ──▶ DeepSeek API
+claude (default) ── Anthropic SDK ──▶ POST /api/anthropic/v1/messages (JWT)
+                                             │
+                                             ▼
+                              https://api.deepseek.com/anthropic
+                                             ▲
+                                  key inserted server-side
+
+deepseek ── SSE loop ──▶ POST /api/deepseek/chat/completions (JWT) ──▶ DeepSeek
       │                                                              ▲
       └── tools ──▶ VirtualFS ──▶ OPFS mirror             key inserted here
 ```
 
-The proxy route (`server/routes/api/deepseek/chat/completions.post.ts`) accepts
-only the Forge JWT issued by the unlock gate. It validates the JWT with
-`authGuard`, inserts `DEEPSEEK_API_KEY` (or the `AGENT_API_KEY` fallback), and
-streams the upstream SSE response back unchanged. Callers cannot supply their
-own upstream URL, and the key never reaches the browser.
+The **claude** engine is the frontend Claude agent: the official
+`@anthropic-ai/sdk` runs in the browser (`dangerouslyAllowBrowser`), streams
+Anthropic Messages events, and calls the JWT proxy. The Anthropic runtime is
+configured from `shared/claude.ts`:
+
+- `ANTHROPIC_MODEL=deepseek-flash[1m]`
+- `ANTHROPIC_DEFAULT_OPUS_MODEL` / `ANTHROPIC_DEFAULT_SONNET_MODEL` =
+  `deepseek-v4-pro[1m]`
+- `ANTHROPIC_DEFAULT_HAIKU_MODEL` / `CLAUDE_CODE_SUBAGENT_MODEL` =
+  `deepseek-flash`
+- `CLAUDE_CODE_EFFORT_LEVEL=high`
+- `CLAUDE_CODE_MAX_CONTEXT_TOKENS=500000`,
+  `CLAUDE_CODE_AUTO_COMPACT_WINDOW=400000` (the browser loop drops the oldest
+  turns past that budget)
+- `CLAUDE_REMOTE_CONTROL_SESSION_NAME_PREFIX=claudetypscript`
+
+`ANTHROPIC_AUTH_TOKEN` is the Forge JWT in the browser; the proxy swaps it for
+`DEEPSEEK_API_KEY`, falling back to `AGENT_API_KEY`, and forwards to
+`DEEPSEEK_ANTHROPIC_BASE_URL` (default `https://api.deepseek.com/anthropic`).
+It accepts the JWT as either `Authorization: Bearer` or `x-api-key`, allows only
+`v1/messages` and `v1/messages/count_tokens`, and never lets the caller choose
+the upstream URL.
+
+The **deepseek** engine is the original frontend loop against the
+OpenAI-compatible proxy (`server/routes/api/deepseek/chat/completions.post.ts`).
+Switch engines with the `claude` / `deepseek` pills in the agent strip; the
+choice persists in `localStorage`.
+
+> Why not `@anthropic-ai/claude-agent-sdk`? Its `query()` spawns the Claude Code
+> native binary, which is Node-only; the package's `/browser` entry only attaches
+> to Anthropic's remote-session service. Running it here would move the loop back
+> to the server, so the frontend uses the official Anthropic client instead.
 
 Each turn:
 
 1. The store sends the system prompt, conversation, and tool schemas to the proxy.
-2. The response streams into the assistant bubble; any `tool_calls` are executed
-   in order against the almostnode `VirtualFS`.
-3. File tools write through `IdeRuntime`, which mirrors every mutation into OPFS.
-4. `todo_write` updates the pinned task panel instead of producing a tool card.
-5. The loop repeats until the model answers without tool calls (max 8 steps).
-6. The pre-turn snapshot powers **Undo run**; a chime marks completion.
+2. Content streams into the assistant bubble while thinking deltas stream into a
+   fixed-height, auto-scrolling **Thinking log** above it.
+3. Tool calls are executed in order against the almostnode `VirtualFS`.
+4. File tools write through `IdeRuntime`, which mirrors every mutation into OPFS.
+5. `todo_write` updates the pinned task panel instead of producing a tool card.
+6. The loop repeats until the model answers without tool calls (max 8 steps). If
+   the limit is reached, a **Keep going** card resumes the loop from the saved
+   history without a new user message.
+7. The pre-turn snapshot powers **Undo run**; a chime marks completion.
 
 The chat lives in its **own column beside the editor**: drag the divider between
 them to resize it, or press `⌘⇧A` to focus the composer. Tool calls appear as
@@ -178,16 +216,16 @@ sandbox/<ide-sandbox-id>/projects/<project-id>/.forge/project.json
 
 ### Environment variables
 
-| Variable            | Purpose                                                |
-| ------------------- | ------------------------------------------------------ |
-| `DEEPSEEK_API_KEY`  | Credential inserted by the proxy                       |
-| `DEEPSEEK_MODEL`    | Model sent upstream (default `deepseek-flash`)         |
-| `DEEPSEEK_BASE_URL` | Upstream base URL (default `https://api.deepseek.com`) |
-| `AGENT_API_KEY`     | Credential fallback when `DEEPSEEK_API_KEY` is empty   |
-| `OPENAI_API_KEY`    | Last credential fallback                               |
-| `AGENT_MODEL`       | Model fallback when `DEEPSEEK_MODEL` is empty          |
-| `AGENT_BASE_URL`    | Base URL fallback when `DEEPSEEK_BASE_URL` is empty    |
-| `FORGE_PASSWORD`    | Password that gates the UI and issues the proxy JWT    |
+| Variable                      | Purpose                                                                 |
+| ----------------------------- | ----------------------------------------------------------------------- |
+| `DEEPSEEK_API_KEY`            | Credential inserted by both proxies                                     |
+| `AGENT_API_KEY`               | Credential fallback (also the `ANTHROPIC_AUTH_TOKEN` equivalent)        |
+| `DEEPSEEK_MODEL`              | DeepSeek-loop model (default `deepseek-flash`)                          |
+| `DEEPSEEK_BASE_URL`           | OpenAI-compatible upstream (default `https://api.deepseek.com`)         |
+| `DEEPSEEK_ANTHROPIC_BASE_URL` | Anthropic-compatible upstream (default `https://api.deepseek.com/anthropic`) |
+| `AGENT_MODEL`                 | Model fallback when `DEEPSEEK_MODEL` is empty                           |
+| `AGENT_BASE_URL`              | Base URL fallback when `DEEPSEEK_BASE_URL` is empty                     |
+| `FORGE_PASSWORD`              | Password that gates the UI and issues the proxy JWT                     |
 
 ### Security and privacy
 
@@ -195,7 +233,10 @@ sandbox/<ide-sandbox-id>/projects/<project-id>/.forge/project.json
   (development) or `401` (production) with `X-Forge-Auth: required`.
 - The DeepSeek key is server-only. The browser never receives it.
 - The upstream URL is server-configured; request bodies cannot redirect it.
-- The proxy caps conversations at 80 messages / 300k characters and tools at 16.
+- The OpenAI-compatible proxy caps conversations at 80 messages / 300k characters
+  and tools at 16. The Anthropic proxy caps conversations at 200 messages and
+  8 MB request bodies, and exposes only `v1/messages` and
+  `v1/messages/count_tokens`.
 - Tool paths must be absolute; `..`, null bytes, and `node_modules` are rejected.
 - OPFS data is origin-scoped. The app requests persistent storage so the browser
   is less likely to evict it.
@@ -236,14 +277,19 @@ tree, tabs, buffers, logs, project metadata, and layout.
 │   │   ├── bootstrap.ts    # OPFS → Nitro → starter hydration; binds the sink
 │   │   ├── shell.ts        # in-browser shell over the VFS
 │   │   ├── opfs.ts         # OPFS project store + runtime file sink
-│   │   ├── agent-client.ts # SSE client for the DeepSeek proxy
-│   │   ├── agent-tools.ts  # in-tab tool schemas + VFS/bash execution
-│   │   └── api.ts          # Nitro client
+│   │   ├── agent-client.ts  # SSE client for the DeepSeek loop
+│   │   ├── claude-client.ts # Anthropic SDK stream + message conversion
+│   │   ├── claude-config.ts # re-exports shared Claude agent settings
+│   │   ├── agent-tools.ts   # in-tab tool schemas + VFS/bash execution
+│   │   └── api.ts           # Nitro client
 │   └── store/              # runtime · workspace · projects · ui · agent (Zustand)
 ├── server/
-│   ├── routes/api/         # Nitro routes (/api/health, /api/projects, /api/deepseek, /api/auth)
+│   ├── routes/api/         # Nitro routes (/api/health, /api/projects,
+│   │                       #   /api/deepseek, /api/anthropic, /api/auth)
 │   └── utils/              # password gate + project validation/storage
-├── shared/types.ts
+├── shared/
+│   ├── types.ts            # API + agent types
+│   └── claude.ts           # Claude agent model/effort/compaction settings
 └── data/projects/          # Nitro snapshots, created at runtime, git-ignored
 ```
 
@@ -263,15 +309,19 @@ server-side snapshot backup written by **Save**.
 | DELETE | `/api/projects/:id` | Delete a saved project                   |
 | GET    | `/api/agent/status` | Proxy route + credential status          |
 | POST   | `/api/deepseek/chat/completions` | JWT-authenticated DeepSeek SSE proxy |
+| POST   | `/api/anthropic/v1/messages` | JWT-authenticated Anthropic Messages proxy |
+| POST   | `/api/anthropic/v1/messages/count_tokens` | Token-count passthrough |
 
 All routes except `GET /api/auth` and `POST /api/auth` require
-`Authorization: Bearer <token>` when `FORGE_PASSWORD` is configured.
+`Authorization: Bearer <token>` when `FORGE_PASSWORD` is configured. The
+Anthropic proxy also accepts the JWT as `x-api-key`, which is how the official
+Anthropic SDK authenticates.
 
 Snapshots are capped at 500 files / 2 MB, paths must be absolute, and
 `node_modules` is rejected. Project JSON is stored on disk locally and in Vercel
-Blob when `BLOB_READ_WRITE_TOKEN` is present. The DeepSeek proxy validates the
-Forge JWT, inserts the server-side key, and returns the upstream SSE stream
-unchanged; the browser agent executes tools locally and mirrors files to OPFS.
+Blob when `BLOB_READ_WRITE_TOKEN` is present. Both agent proxies validate the
+Forge JWT, insert the server-side key, and return the upstream stream unchanged;
+the browser agent executes tools locally and mirrors files to OPFS.
 
 ### Project archive format
 

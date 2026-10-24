@@ -11,10 +11,16 @@ export interface AgentStreamOptions {
   tools: AgentToolDefinition[];
   signal: AbortSignal;
   onDelta: (chunk: string) => void;
+  /** DeepSeek's separate reasoning stream (`reasoning_content`). */
+  onReasoning?: (chunk: string) => void;
 }
 
 export interface AgentStreamResult {
   content: string;
+  /** Full reasoning text, for replaying on the next tool turn. */
+  reasoning?: string;
+  /** Anthropic thinking signature, when the provider sends one. */
+  reasoningSignature?: string;
   toolCalls: AgentToolCall[];
   finishReason: string | null;
 }
@@ -62,7 +68,7 @@ function finalizeToolCalls(accumulators: Map<number, ToolCallAccumulator>): Agen
 }
 
 export async function streamAgentChat(options: AgentStreamOptions): Promise<AgentStreamResult> {
-  const { messages, tools, signal, onDelta } = options;
+  const { messages, tools, signal, onDelta, onReasoning } = options;
 
   const response = await fetch('/api/deepseek/chat/completions', {
     method: 'POST',
@@ -86,7 +92,12 @@ export async function streamAgentChat(options: AgentStreamOptions): Promise<Agen
   if (contentType.includes('application/json')) {
     const data = (await response.json()) as {
       choices?: Array<{
-        message?: { content?: string | null; tool_calls?: AgentToolCall[] };
+        message?: {
+          content?: string | null;
+          reasoning?: string | null;
+          reasoning_content?: string | null;
+          tool_calls?: AgentToolCall[];
+        };
         finish_reason?: string | null;
       }>;
       error?: { message?: string };
@@ -94,9 +105,13 @@ export async function streamAgentChat(options: AgentStreamOptions): Promise<Agen
     if (data.error?.message) throw new Error(data.error.message);
     const choice = data.choices?.[0];
     const content = choice?.message?.content ?? '';
+    const reasoning =
+      choice?.message?.reasoning_content ?? choice?.message?.reasoning ?? '';
+    if (reasoning) onReasoning?.(reasoning);
     if (content) onDelta(content);
     return {
       content,
+      reasoning,
       toolCalls: choice?.message?.tool_calls ?? [],
       finishReason: choice?.finish_reason ?? null,
     };
@@ -108,6 +123,7 @@ export async function streamAgentChat(options: AgentStreamOptions): Promise<Agen
   const decoder = new TextDecoder();
   let buffer = '';
   let content = '';
+  let reasoningText = '';
   let finishReason: string | null = null;
   let streamError: Error | null = null;
   const accumulators = new Map<number, ToolCallAccumulator>();
@@ -127,6 +143,8 @@ export async function streamAgentChat(options: AgentStreamOptions): Promise<Agen
       choices?: Array<{
         delta?: {
           content?: string | null;
+          reasoning?: string | null;
+          reasoning_content?: string | null;
           tool_calls?: Array<{
             index?: number;
             id?: string;
@@ -152,6 +170,12 @@ export async function streamAgentChat(options: AgentStreamOptions): Promise<Agen
     const choice = json.choices?.[0];
     if (!choice) return;
     const delta = choice.delta;
+
+    const reasoning = delta?.reasoning_content ?? delta?.reasoning;
+    if (typeof reasoning === 'string' && reasoning) {
+      reasoningText += reasoning;
+      onReasoning?.(reasoning);
+    }
 
     if (typeof delta?.content === 'string' && delta.content) {
       content += delta.content;
@@ -195,6 +219,7 @@ export async function streamAgentChat(options: AgentStreamOptions): Promise<Agen
 
   return {
     content,
+    reasoning: reasoningText,
     toolCalls: finalizeToolCalls(accumulators),
     finishReason,
   };

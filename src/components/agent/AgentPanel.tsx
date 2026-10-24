@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ArrowUp,
+  Brain,
   Check,
   ChevronDown,
   CircleAlert,
@@ -10,6 +11,7 @@ import {
   ListChecks,
   Loader2,
   Pencil,
+  Play,
   RefreshCw,
   Search,
   Settings2,
@@ -19,6 +21,7 @@ import {
   Trash2,
   Undo2,
 } from "lucide-react";
+import type { AgentEngine } from "../../../shared/types";
 import {
   selectAgentConfigured,
   useAgentStore,
@@ -113,6 +116,53 @@ function toolVisual(name: string): {
     return { icon: <ListChecks size={13} />, kind: "todo", label: "plan" };
   }
   return { icon: <Sparkles size={13} />, kind: "other", label: name };
+}
+
+function ThinkingLog({ text, streaming }: { text: string; streaming: boolean }) {
+  const [open, setOpen] = useState(true);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const trimmed = text.trim();
+
+  useEffect(() => {
+    const element = bodyRef.current;
+    if (!element) return;
+    element.scrollTop = element.scrollHeight;
+  }, [trimmed, open]);
+
+  if (!trimmed) return null;
+
+  return (
+    <div className={`agent-thinking ${streaming ? "is-streaming" : ""}`}>
+      <button
+        type="button"
+        className="agent-thinking-head"
+        aria-expanded={open}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <span className="agent-thinking-mark">
+          {streaming ? <Loader2 size={11} className="spin" /> : <Brain size={11} />}
+        </span>
+        <span className="agent-thinking-title">Thinking log</span>
+        <span className="agent-thinking-meta">
+          {streaming ? "streaming" : `${trimmed.split(/\n+/).length} lines`}
+        </span>
+        <ChevronDown
+          size={12}
+          className={`agent-thinking-chevron ${open ? "" : "is-collapsed"}`}
+        />
+      </button>
+      {open ? (
+        <div
+          className="agent-thinking-body"
+          ref={bodyRef}
+          role="log"
+          aria-live="polite"
+        >
+          <pre>{trimmed}</pre>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function ToolCard({ tool }: { tool: AgentToolEvent }) {
@@ -254,7 +304,13 @@ function TodoPanel() {
   );
 }
 
-function AgentLoader({ label }: { label: string }) {
+function AgentLoader({
+  label,
+  engine,
+}: {
+  label: string;
+  engine: AgentEngine;
+}) {
   return (
     <div className="agent-loader" role="status" aria-live="polite">
       <svg
@@ -283,7 +339,11 @@ function AgentLoader({ label }: { label: string }) {
       </svg>
       <span className="agent-loader-copy">
         <strong>{label || "Working…"}</strong>
-        <span>Browser agent · DeepSeek proxy · JWT auth</span>
+        <span>
+          {engine === "claude"
+            ? "Frontend Claude agent · Anthropic proxy · JWT auth"
+            : "Frontend agent · DeepSeek proxy · JWT auth"}
+        </span>
       </span>
       <span className="agent-loader-bars" aria-hidden="true">
         <i />
@@ -302,8 +362,18 @@ export function AgentPanel() {
   const undoAvailable = useAgentStore((state) => state.undoAvailable);
   const statusLoaded = useAgentStore((state) => state.statusLoaded);
   const status = useAgentStore((state) => state.status);
-  const model = status?.model ?? "";
-  const provider = status?.provider ?? "";
+  const engine = useAgentStore((state) => state.engine);
+  const setEngine = useAgentStore((state) => state.setEngine);
+  const model =
+    engine === "claude"
+      ? status?.claude?.model ?? ""
+      : status?.model ?? "";
+  const provider =
+    engine === "claude" ? "anthropic" : status?.provider ?? "";
+  const proxyUrl =
+    engine === "claude"
+      ? status?.claude?.proxyUrl
+      : status?.proxyUrl;
   const configured = useAgentStore(selectAgentConfigured);
   const send = useAgentStore((state) => state.send);
   const stop = useAgentStore((state) => state.stop);
@@ -311,6 +381,7 @@ export function AgentPanel() {
   const openSetup = useAgentStore((state) => state.openSetup);
   const clear = useAgentStore((state) => state.clear);
   const restoreLastRun = useAgentStore((state) => state.restoreLastRun);
+  const keepGoing = useAgentStore((state) => state.keepGoing);
   const openConfirm = useUiStore((state) => state.openConfirm);
   const closeConfirm = useUiStore((state) => state.closeConfirm);
 
@@ -412,9 +483,35 @@ export function AgentPanel() {
         ) : null}
 
         <div className="agent-strip-actions">
+          <div
+            className="agent-engine-switch"
+            role="group"
+            aria-label="Agent engine"
+          >
+            <button
+              type="button"
+              className={engine === "claude" ? "is-active" : ""}
+              aria-pressed={engine === "claude"}
+              disabled={running}
+              onClick={() => setEngine("claude")}
+              title="Frontend Claude agent · Anthropic Messages proxy"
+            >
+              claude
+            </button>
+            <button
+              type="button"
+              className={engine === "deepseek" ? "is-active" : ""}
+              aria-pressed={engine === "deepseek"}
+              disabled={running}
+              onClick={() => setEngine("deepseek")}
+              title="Frontend loop · OpenAI-compatible DeepSeek proxy"
+            >
+              deepseek
+            </button>
+          </div>
           <span
             className="agent-model-chip"
-            title={status?.proxyUrl || "No DeepSeek proxy configured"}
+            title={proxyUrl || "No agent proxy configured"}
           >
             {model || "no model"}
           </span>
@@ -447,7 +544,9 @@ export function AgentPanel() {
               <p>
                 I run in this tab with tools against your project, and the preview
                 hot-reloads as I work. My model calls go through the server's
-                JWT-authenticated DeepSeek proxy, so the API key stays server-side.
+                JWT-authenticated{" "}
+                {engine === "claude" ? "Anthropic-style" : "DeepSeek"} proxy, so
+                the API key stays server-side.
               </p>
               <div className="agent-suggestions">
                 {SUGGESTIONS.map((suggestion) => (
@@ -514,10 +613,16 @@ export function AgentPanel() {
                       <Sparkles size={13} />
                     </div>
                     <div className="agent-assistant">
+                      <ThinkingLog
+                        text={message.reasoning ?? ""}
+                        streaming={message.streaming}
+                      />
                       {message.content ? (
                         <RichText text={message.content} />
                       ) : null}
-                      {message.streaming && !message.content ? (
+                      {message.streaming &&
+                      !message.content &&
+                      !(message.reasoning ?? "").trim() ? (
                         <TypingDots />
                       ) : null}
                       {message.streaming && message.content ? (
@@ -541,6 +646,30 @@ export function AgentPanel() {
                   </div>
                 );
               }
+              if (message.role === "limit") {
+                return (
+                  <div key={message.id} className="agent-limit">
+                    <span className="agent-limit-icon">
+                      <CircleAlert size={13} />
+                    </span>
+                    <div className="agent-limit-copy">
+                      <strong>Step limit reached</strong>
+                      <span>
+                        The agent used {message.steps}{" "}
+                        {message.steps === 1 ? "step" : "steps"} and may still
+                        have work left.
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="agent-limit-button"
+                      onClick={() => void keepGoing()}
+                    >
+                      <Play size={11} /> Keep going
+                    </button>
+                  </div>
+                );
+              }
               return (
                 <div key={message.id} className="agent-notice">
                   {message.content}
@@ -560,7 +689,9 @@ export function AgentPanel() {
 
       <div className="agent-dock">
         <TodoPanel />
-        {running ? <AgentLoader label={runStatusText ?? ""} /> : null}
+        {running ? (
+          <AgentLoader label={runStatusText ?? ""} engine={engine} />
+        ) : null}
       </div>
 
       <div className={`agent-composer ${running ? "is-running" : ""}`}>

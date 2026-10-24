@@ -53,6 +53,10 @@ export interface AgentChatMessage {
   name?: string;
   tool_calls?: AgentToolCall[];
   tool_call_id?: string;
+  /** Anthropic extended-thinking text replayed on the next tool turn. */
+  thinking?: string;
+  /** Opaque signature DeepSeek attaches to a thinking block, when present. */
+  thinking_signature?: string;
 }
 
 export interface AgentToolDefinition {
@@ -64,17 +68,31 @@ export interface AgentToolDefinition {
   };
 }
 
+export interface ClaudeAgentStatus {
+  configured: boolean;
+  model: string;
+  /** Anthropic-style endpoint the frontend agent calls with its Forge JWT. */
+  proxyUrl: string;
+  /** Upstream Anthropic-compatible base URL (server-side only). */
+  upstreamBaseUrl: string;
+  effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+}
+
 export interface AgentStatusResponse {
   configured: boolean;
   provider: string;
   model: string;
   /** Same-origin REST proxy the browser agent calls with its Forge JWT. */
   proxyUrl: string;
-  keySource: 'DEEPSEEK_API_KEY' | 'AGENT_API_KEY' | 'OPENAI_API_KEY' | null;
+  keySource: 'DEEPSEEK_API_KEY' | 'AGENT_API_KEY' | null;
   /** Legacy aliases kept for older clients. */
   defaultBaseUrl: string;
   defaultModel: string;
+  /** Frontend Claude agent (Anthropic Messages API via the JWT proxy). */
+  claude: ClaudeAgentStatus;
 }
+
+export type AgentEngine = 'claude' | 'deepseek';
 
 /** Body accepted by POST /api/deepseek/chat/completions. */
 export interface DeepSeekChatRequest {

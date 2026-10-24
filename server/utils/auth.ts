@@ -132,9 +132,7 @@ export function isAuthenticated(event: H3Event): boolean {
  * keeps the standard 401. The header lets the client recognize this as an
  * auth failure rather than an upstream provider error.
  */
-export async function authGuard(event: H3Event): Promise<{ message: string } | null> {
-  if (isAuthenticated(event)) return null;
-
+async function rejectUnauthorized(event: H3Event): Promise<{ message: string }> {
   const production = process.env.NODE_ENV === 'production';
   const method = event.req.method.toUpperCase();
   if (!production && method !== 'GET' && method !== 'HEAD') {
@@ -145,6 +143,26 @@ export async function authGuard(event: H3Event): Promise<{ message: string } | n
   setResponseStatus(event, status);
   setResponseHeader(event, 'X-Forge-Auth', 'required');
   return { message: 'Sign in is required.' };
+}
+
+export async function authGuard(event: H3Event): Promise<{ message: string } | null> {
+  if (isAuthenticated(event)) return null;
+  return rejectUnauthorized(event);
+}
+
+/**
+ * Anthropic-style guard: official Anthropic clients send the credential as
+ * `x-api-key` instead of `Authorization`. Both headers must carry the Forge
+ * JWT — never the upstream provider key, which stays on the server.
+ */
+export async function authGuardAny(event: H3Event): Promise<{ message: string } | null> {
+  if (!isAuthRequired()) return null;
+  if (isAuthenticated(event)) return null;
+
+  const apiKey = (getHeader(event, 'x-api-key') ?? '').trim();
+  if (apiKey && apiKey.length <= MAX_TOKEN_LENGTH && verifyJwt(apiKey)) return null;
+
+  return rejectUnauthorized(event);
 }
 
 export function authStatus(event: H3Event): AuthStatusResponse {

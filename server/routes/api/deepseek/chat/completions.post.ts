@@ -134,7 +134,6 @@ export default defineEventHandler(async (event) => {
   const apiKey = (
     process.env.DEEPSEEK_API_KEY ||
     process.env.AGENT_API_KEY ||
-    process.env.OPENAI_API_KEY ||
     ''
   ).trim();
   if (!apiKey) {
