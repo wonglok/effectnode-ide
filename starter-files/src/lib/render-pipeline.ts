@@ -1,5 +1,5 @@
 /**
- * Scene compositor, adapted from Easy Fancy's render pipeline.
+ * Scene compositor, adapted from 3d render pipeline.
  *
  * Each chapter renders through its own PassNode. The output graph references
  * only the active pass — or the two passes taking part in a handoff — so a
@@ -7,13 +7,13 @@
  * shader (liquid glass, column melt, or cross zoom) driven by scroll progress,
  * followed by a shared vignette and film-grain finish.
  */
-import * as THREE from 'three/webgpu';
+import * as THREE from "three/webgpu";
 import {
   RenderPipeline,
   type Node,
   type PassNode,
   type WebGPURenderer,
-} from 'three/webgpu';
+} from "three/webgpu";
 import {
   abs,
   acos,
@@ -45,8 +45,8 @@ import {
   vec2,
   vec3,
   vec4,
-} from 'three/tsl';
-import { SECTIONS } from '../sections/registry.ts';
+} from "three/tsl";
+import { SECTIONS } from "../sections/registry.ts";
 
 const TRANSITION_WIDTH = 0.24;
 
@@ -63,7 +63,7 @@ export type PipelineState = {
   progress: number;
 };
 
-type TextureNode = ReturnType<PassNode['getTextureNode']>;
+type TextureNode = ReturnType<PassNode["getTextureNode"]>;
 
 export class SectionRenderPipeline {
   private readonly pipeline: RenderPipeline;
@@ -74,7 +74,7 @@ export class SectionRenderPipeline {
     time: uniform(0),
   };
   private readonly toColor = new THREE.Color();
-  private activeKey = '';
+  private activeKey = "";
 
   constructor(renderer: WebGPURenderer, passes: PassNode[]) {
     this.passes = passes;
@@ -118,7 +118,7 @@ export class SectionRenderPipeline {
         from.getTextureNode(),
         to.getTextureNode(),
         index,
-        index + 1
+        index + 1,
       );
       this.pipeline.needsUpdate = true;
       this.pipeline.render();
@@ -126,7 +126,7 @@ export class SectionRenderPipeline {
 
     this.buildOutput(0, 0, false);
     this.pipeline.render();
-    this.activeKey = '';
+    this.activeKey = "";
   }
 
   dispose() {
@@ -136,7 +136,7 @@ export class SectionRenderPipeline {
   private buildOutput(
     fromIndex: number,
     toIndex: number,
-    isTransitioning: boolean
+    isTransitioning: boolean,
   ) {
     const fromPass = this.passes[fromIndex] ?? this.passes[0];
     if (!fromPass) return;
@@ -157,13 +157,13 @@ export class SectionRenderPipeline {
     fromTexture: TextureNode,
     toTexture: TextureNode,
     fromIndex: number,
-    toIndex: number
+    toIndex: number,
   ) {
     const pair = `${Math.min(fromIndex, toIndex)}-${Math.max(fromIndex, toIndex)}`;
-    if (pair === '2-3') {
+    if (pair === "2-3") {
       return this.crossZoomTransitionNode(fromTexture, toTexture);
     }
-    if (pair === '1-2') {
+    if (pair === "1-2") {
       return this.pageCurlTransitionNode(fromTexture, toTexture);
     }
     return this.liquidTransitionNode(fromTexture, toTexture);
@@ -176,7 +176,7 @@ export class SectionRenderPipeline {
    */
   private pageCurlTransitionNode(
     fromTexture: TextureNode,
-    toTexture: TextureNode
+    toTexture: TextureNode,
   ) {
     const PI = Math.PI;
     const MIN_AMOUNT = -0.16;
@@ -200,38 +200,38 @@ export class SectionRenderPipeline {
     // Work in the reference's bottom-left UV space, then flip back to the
     // render-target's top-left origin when sampling.
     const uv = vec2(screenUV.x, oneMinus(screenUV.y));
-    const sampleFrom = (q: Node<'vec2'>) =>
+    const sampleFrom = (q: Node<"vec2">) =>
       fromTexture.sample(vec2(q.x, oneMinus(q.y))).rgb;
-    const sampleTo = (q: Node<'vec2'>) =>
+    const sampleTo = (q: Node<"vec2">) =>
       toTexture.sample(vec2(q.x, oneMinus(q.y))).rgb;
 
-    const rotate = (v: Node<'vec3'>) =>
+    const rotate = (v: Node<"vec3">) =>
       vec3(
         v.x.mul(ROT_C).sub(v.y.mul(ROT_S)).sub(0.801),
         v.x.mul(ROT_S).add(v.y.mul(ROT_C)).add(0.89),
-        v.z
+        v.z,
       );
-    const rotateBack = (v: Node<'vec3'>) =>
+    const rotateBack = (v: Node<"vec3">) =>
       vec3(
         v.x.mul(BACK_C).sub(v.y.mul(BACK_S)).add(0.985),
         v.x.mul(BACK_S).add(v.y.mul(BACK_C)).add(0.985),
-        v.z
+        v.z,
       );
 
     /** Maps a point on the cylinder back onto the page. */
-    const hitPoint = (hitAngle: Node<'float'>, point: Node<'vec3'>) =>
+    const hitPoint = (hitAngle: Node<"float">, point: Node<"vec3">) =>
       rotateBack(vec3(point.x, hitAngle.div(2 * PI), point.z));
 
-    const isOutside = (point: Node<'vec3'>) =>
+    const isOutside = (point: Node<"vec3">) =>
       or(
         or(point.x.lessThan(0), point.y.lessThan(0)),
-        or(point.x.greaterThan(1), point.y.greaterThan(1))
+        or(point.x.greaterThan(1), point.y.greaterThan(1)),
       );
 
     const antiAlias = (
-      color1: Node<'vec3'>,
-      color2: Node<'vec3'>,
-      distance: Node<'float'>
+      color1: Node<"vec3">,
+      color2: Node<"vec3">,
+      distance: Node<"float">,
     ) => {
       const d = distance.mul(SCALE);
       // Clamping the base keeps pow() out of NaN territory for the branches
@@ -241,16 +241,16 @@ export class SectionRenderPipeline {
       return select(
         d.lessThan(0),
         color2,
-        select(d.greaterThan(2), color1, blended)
+        select(d.greaterThan(2), color1, blended),
       );
     };
 
-    const distanceToEdge = (point: Node<'vec3'>) => {
+    const distanceToEdge = (point: Node<"vec3">) => {
       const baseDx = abs(
-        select(point.x.greaterThan(0.5), oneMinus(point.x), point.x)
+        select(point.x.greaterThan(0.5), oneMinus(point.x), point.x),
       );
       const baseDy = abs(
-        select(point.y.greaterThan(0.5), oneMinus(point.y), point.y)
+        select(point.y.greaterThan(0.5), oneMinus(point.y), point.y),
       );
       let dx = select(point.x.lessThan(0), point.x.negate(), baseDx);
       dx = select(point.x.greaterThan(1), point.x.sub(1), dx);
@@ -259,26 +259,26 @@ export class SectionRenderPipeline {
 
       const bothOut = and(
         or(point.x.lessThan(0), point.x.greaterThan(1)),
-        or(point.y.lessThan(0), point.y.greaterThan(1))
+        or(point.y.lessThan(0), point.y.greaterThan(1)),
       );
       return select(bothOut, sqrt(dx.mul(dx).add(dy.mul(dy))), min(dx, dy));
     };
 
     /** What shows through the gap where the curled sheet has lifted. */
-    const seeThrough = (yc: Node<'float'>) => {
+    const seeThrough = (yc: Node<"float">) => {
       const hitAngle = float(PI).sub(
-        acos(clamp(yc.div(CYLINDER_RADIUS), -1, 1)).sub(cylinderAngle)
+        acos(clamp(yc.div(CYLINDER_RADIUS), -1, 1)).sub(cylinderAngle),
       );
       const point = hitPoint(hitAngle, rotate(vec3(uv.x, uv.y, 1)));
       const edge = antiAlias(
         sampleFrom(point.xy),
         vec3(0),
-        distanceToEdge(point)
+        distanceToEdge(point),
       );
       return select(
         and(yc.lessThanEqual(0), isOutside(point)),
         sampleTo(uv),
-        select(yc.greaterThan(0), sampleFrom(uv), edge)
+        select(yc.greaterThan(0), sampleFrom(uv), edge),
       );
     };
 
@@ -288,24 +288,21 @@ export class SectionRenderPipeline {
      * shadow as an opacity ramp avoids per-channel subtraction, which can
      * brighten or shift colours into an inverted-looking rim.
      */
-    const applyShadow = (colorValue: Node<'vec3'>, alpha: Node<'float'>) =>
+    const applyShadow = (colorValue: Node<"vec3">, alpha: Node<"float">) =>
       colorValue.mul(oneMinus(clamp(alpha, 0, 1)));
 
-    const seeThroughWithShadow = (
-      yc: Node<'float'>,
-      point: Node<'vec3'>
-    ) => {
+    const seeThroughWithShadow = (yc: Node<"float">, point: Node<"vec3">) => {
       const base = oneMinus(distanceToEdge(point).mul(30)).div(3);
       return applyShadow(seeThrough(yc), base.mul(amount));
     };
 
     /** The paper's reverse side: a desaturated back-lit grey. */
-    const backside = (yc: Node<'float'>, point: Node<'vec3'>) => {
+    const backside = (yc: Node<"float">, point: Node<"vec3">) => {
       const paper = sampleFrom(point.xy);
       const gray = paper.r.add(paper.b).add(paper.g).div(15);
       const lift = pow(
         max(float(0), oneMinus(abs(yc.div(CYLINDER_RADIUS)))),
-        0.2
+        0.2,
       )
         .div(2)
         .add(0.5)
@@ -314,7 +311,7 @@ export class SectionRenderPipeline {
     };
 
     /** Everything past the curl, seen from behind the sheet. */
-    const behindSurface = (ycIn: Node<'float'>, pointIn: Node<'vec3'>) => {
+    const behindSurface = (ycIn: Node<"float">, pointIn: Node<"vec3">) => {
       // Flip to the other half of the cylinder.
       const yc = float(-2 * CYLINDER_RADIUS).sub(ycIn);
       const hitAngle = acos(clamp(yc.div(CYLINDER_RADIUS), -1, 1))
@@ -325,18 +322,16 @@ export class SectionRenderPipeline {
       const dx = point.x.sub(0.5);
       const dy = point.y.sub(0.5);
       const nyc = yc.negate().div(CYLINDER_RADIUS);
-      const innerShadow = oneMinus(
-        sqrt(dx.mul(dx).add(dy.mul(dy))).div(0.71)
-      )
+      const innerShadow = oneMinus(sqrt(dx.mul(dx).add(dy.mul(dy))).div(0.71))
         .mul(nyc.mul(nyc).mul(nyc))
         .mul(0.5);
       const inside = and(
         and(point.x.greaterThanEqual(0), point.y.greaterThanEqual(0)),
-        and(point.x.lessThanEqual(1), point.y.lessThanEqual(1))
+        and(point.x.lessThanEqual(1), point.y.lessThanEqual(1)),
       );
       const useInner = and(
         and(yc.lessThan(0), inside),
-        or(hitAngle.lessThan(PI), amount.greaterThan(0.5))
+        or(hitAngle.lessThan(PI), amount.greaterThan(0.5)),
       );
       const shadow = select(useInner, innerShadow, float(0));
 
@@ -352,7 +347,7 @@ export class SectionRenderPipeline {
     const hitAngleMod = mod(hitAngle, 2 * PI);
     const seeThroughEarly = or(
       and(hitAngleMod.greaterThan(PI), amount.lessThan(0.5)),
-      and(hitAngleMod.greaterThan(PI / 2), amount.lessThan(0))
+      and(hitAngleMod.greaterThan(PI / 2), amount.lessThan(0)),
     );
 
     const hit = hitPoint(hitAngle, rotated);
@@ -360,23 +355,23 @@ export class SectionRenderPipeline {
     const curled = antiAlias(
       backside(yc, hit),
       otherColor,
-      float(CYLINDER_RADIUS).sub(abs(yc))
+      float(CYLINDER_RADIUS).sub(abs(yc)),
     );
     const edge = antiAlias(
       curled,
       seeThroughWithShadow(yc, hit),
-      distanceToEdge(hit)
+      distanceToEdge(hit),
     );
     const middle = select(
       seeThroughEarly,
       seeThrough(yc),
-      select(isOutside(hit), seeThroughWithShadow(yc, hit), edge)
+      select(isOutside(hit), seeThroughWithShadow(yc, hit), edge),
     );
 
     const rgb = select(
       yc.lessThan(-CYLINDER_RADIUS),
       behindSurface(yc, rotated),
-      select(yc.greaterThan(CYLINDER_RADIUS), sampleFrom(uv), middle)
+      select(yc.greaterThan(CYLINDER_RADIUS), sampleFrom(uv), middle),
     );
 
     return this.finishNode(vec4(rgb, 1));
@@ -388,16 +383,16 @@ export class SectionRenderPipeline {
    */
   private crossZoomTransitionNode(
     fromTexture: TextureNode,
-    toTexture: TextureNode
+    toTexture: TextureNode,
   ) {
     const STRENGTH = 0.4;
     const SAMPLES = 40;
 
     const progress = this.uniforms.progress;
     const uv = vec2(screenUV.x, oneMinus(screenUV.y));
-    const sampleFrom = (q: Node<'vec2'>) =>
+    const sampleFrom = (q: Node<"vec2">) =>
       fromTexture.sample(vec2(q.x, oneMinus(q.y))).rgb;
-    const sampleTo = (q: Node<'vec2'>) =>
+    const sampleTo = (q: Node<"vec2">) =>
       toTexture.sample(vec2(q.x, oneMinus(q.y))).rgb;
 
     const center = vec2(progress.mul(0.5).add(0.25), 0.5);
@@ -409,18 +404,18 @@ export class SectionRenderPipeline {
     const dissolve = select(
       progress.lessThanEqual(0),
       float(0),
-      select(progress.greaterThanEqual(1), float(1), eased)
+      select(progress.greaterThanEqual(1), float(1), eased),
     );
 
     const blurStrength = oneMinus(cos(progress.mul(2 * Math.PI))).mul(
-      STRENGTH * 0.5
+      STRENGTH * 0.5,
     );
 
     const offset = fract(sin(dot(uv, vec2(12.9898, 78.233))).mul(43758.5453));
     const toCenter = center.sub(uv);
 
-    let sum: Node<'vec3'> = vec3(0);
-    let total: Node<'float'> = float(0);
+    let sum: Node<"vec3"> = vec3(0);
+    let total: Node<"float"> = float(0);
     for (let tap = 0; tap <= SAMPLES; tap += 1) {
       const percent = offset.add(tap).div(SAMPLES);
       const weight = percent.sub(percent.mul(percent)).mul(4);
@@ -439,7 +434,7 @@ export class SectionRenderPipeline {
    */
   private liquidTransitionNode(
     fromTexture: TextureNode,
-    toTexture: TextureNode
+    toTexture: TextureNode,
   ) {
     const uv = screenUV;
     const aspect = screenSize.x.div(screenSize.y);
@@ -448,7 +443,7 @@ export class SectionRenderPipeline {
       3,
       2.0,
       0.5,
-      1.0
+      1.0,
     )
       .mul(0.5)
       .add(0.5);
@@ -459,14 +454,14 @@ export class SectionRenderPipeline {
     const wipe = oneMinus(smoothstep(0, TRANSITION_WIDTH, warped.sub(front)));
 
     const seam = smoothstep(0, 0.12, wipe).mul(
-      smoothstep(0, 0.12, oneMinus(wipe))
+      smoothstep(0, 0.12, oneMinus(wipe)),
     );
     const ripple = smoothstep(0, 0.9, seam);
     const wobble = mix(float(-1), float(1), noise).mul(ripple);
 
     const distortion = vec2(
       wobble.mul(0.026),
-      seam.mul(noise.sub(0.5)).mul(0.052)
+      seam.mul(noise.sub(0.5)).mul(0.052),
     );
     const sampleUv = uv.add(distortion);
     const chroma = vec2(seam.mul(0.008).add(0.0007), 0);
@@ -491,7 +486,7 @@ export class SectionRenderPipeline {
   }
 
   /** Shared vignette and animated film grain. */
-  private finishNode(input: Node<'vec4'>) {
+  private finishNode(input: Node<"vec4">) {
     const uv = screenUV;
     const vignette = oneMinus(smoothstep(0.32, 0.86, length(uv.sub(0.5))))
       .mul(0.18)
@@ -499,8 +494,8 @@ export class SectionRenderPipeline {
 
     const grain = interleavedGradientNoise(
       screenCoordinate.add(
-        vec2(this.uniforms.time.mul(47), this.uniforms.time.mul(91))
-      )
+        vec2(this.uniforms.time.mul(47), this.uniforms.time.mul(91)),
+      ),
     )
       .sub(0.5)
       .mul(0.018);
