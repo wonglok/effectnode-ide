@@ -31,8 +31,9 @@ and external coding agents should follow these rules when changing the project.
   `three/webgpu` and `three/tsl` before adding it.
 - The chapter 1 title uses per-line `TextGeometry` with
   `MeshPhysicalNodeMaterial` transmission. Keep that path WebGPU-compatible.
-- Each chapter owns its scene, camera, and render pass. `RenderPipeline`
-  composes them and applies the shared finish and transitions.
+- Each chapter owns its scene, camera, and render pass. Scene drawing code lives
+  in `src/sections/<scene>/index.ts`; `RenderPipeline` composes the scenes and
+  applies the shared finish and transitions.
 - Dispose of geometries, materials, render targets, and PMREM resources when
   removing a scene or effect.
 
@@ -54,7 +55,12 @@ and external coding agents should follow these rules when changing the project.
 
 ## Layout
 
-- `src/components/SceneStage.tsx` — renderer, chapter worlds, glass title.
+- `src/components/SceneStage.tsx` — renderer and chapter orchestration.
+- `src/sections/kinetic/` — chapter 1 scene, glass title, and bundled font.
+- `src/sections/flow-shield/` — chapter 2 scene.
+- `src/sections/live-env/` — chapter 3 scene.
+- `src/sections/alpha6/` — chapter 4 scene.
+- `src/sections/shared.ts` — shared chapter types and TSL scene helpers.
 - `src/lib/render-pipeline.ts` — pass composition and shader transitions.
 - `src/store/useScrollerStore.ts` — Zustand scroll engine and chapter state.
 - `src/components/StoryRouter.tsx` — hash route and active-chapter bridge.

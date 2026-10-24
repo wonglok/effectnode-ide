@@ -37,14 +37,21 @@ the active chapter (`#/scene-02`), and reloading resumes at that chapter.
 - `src/components/StoryRouter.tsx` — bridges `HashRouter` and the scroll store:
   an active-chapter change rewrites the hash, and a `/scene-02` URL (including
   the legacy `#scene-02` form) snaps the engine to that chapter on load.
-- `src/components/SceneStage.tsx` — one WebGPURenderer and four chapter
-  worlds (instanced glints plus the glass title, displaced flow lines,
-  wireframe city, fresnel shards). Each world has its own scene, camera, and
-  render pass; the scroll phase drifts and scales the world as it enters or
-  leaves. The title lines use `MeshPhysicalNodeMaterial` transmission,
-  dispersion and clearcoat with a prefiltered room environment.
-- `src/lib/helvetica.ts` — the Helvetiker outline bundled for `TextGeometry`,
-  so the title needs no font request at runtime.
+- `src/components/SceneStage.tsx` — the WebGPURenderer and four chapter worlds.
+  Each scene folder owns its drawing code:
+  - `src/sections/kinetic/index.ts` — instanced glints plus the glass title.
+  - `src/sections/flow-shield/index.ts` — displaced flow lines around an outline.
+  - `src/sections/live-env/index.ts` — wireframe city over a breathing grid.
+  - `src/sections/alpha6/index.ts` — fresnel-lit glass shards.
+  Each world has its own scene, camera, and render pass; the scroll phase drifts
+  and scales the world as it enters or leaves. The kinetic title uses
+  `MeshPhysicalNodeMaterial` transmission, dispersion and clearcoat with a
+  prefiltered room environment.
+- `src/sections/shared.ts` — shared scene types and TSL helpers (glow plane,
+  orbit rings).
+- `src/sections/kinetic/helvetica.ts` — the Helvetiker outline bundled for
+  `TextGeometry`, so the title needs no font request at runtime.
+- `src/sections/kinetic/center-text.ts` — the extruded kinetic title.
 - `src/lib/render-pipeline.ts` — composes the active pass through a
   `RenderPipeline`, or blends the outgoing and incoming passes with a TSL
   transition chosen per chapter pair. A shared finish adds the vignette and
@@ -71,7 +78,7 @@ plain CSS and as `--color-primary` in Tailwind (`bg-primary`, `text-primary`,
 ## Editing
 
 - Change the chapter accents and surface colours in `src/sections/registry.ts`.
-- Change a scene's drawing code in `src/components/SceneStage.tsx`.
+- Change a scene's drawing code in its folder under `src/sections/<scene>/`.
 - Change the chrome styling in `src/components/landing.css`.
 - Use Tailwind utilities for new UI; no build step is required.
 

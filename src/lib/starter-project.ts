@@ -5,9 +5,10 @@
  * while the browser receives plain strings.
  *
  * The starter is a four-chapter, scroll-driven landing page for MY COMPANY:
- * a Zustand scroll store, a chapter timeline, and one
- * canvas that draws every scene. The in-browser ViteDevServer compiles the TSX
- * with esbuild-wasm and maps React/Zustand to esm.sh.
+ * a Zustand scroll store, a chapter timeline, and one canvas that draws every
+ * scene. Each chapter's drawing code lives in its own `src/sections/<scene>/`
+ * folder. The in-browser ViteDevServer compiles the TSX with esbuild-wasm and
+ * maps React/Zustand to esm.sh.
  */
 import packageJson from '../../starter-files/package.json?raw';
 import viteConfig from '../../starter-files/vite.config.js?raw';
@@ -21,9 +22,15 @@ import typesDts from '../../starter-files/src/types.d.ts?raw';
 import appTsx from '../../starter-files/src/App.tsx?raw';
 import stylesCss from '../../starter-files/src/styles.css?raw';
 import registryTs from '../../starter-files/src/sections/registry.ts?raw';
+import sharedSceneTs from '../../starter-files/src/sections/shared.ts?raw';
+import kineticSceneTs from '../../starter-files/src/sections/kinetic/index.ts?raw';
+import kineticCenterTextTs from '../../starter-files/src/sections/kinetic/center-text.ts?raw';
+import kineticHelveticaTs from '../../starter-files/src/sections/kinetic/helvetica.ts?raw';
+import flowShieldSceneTs from '../../starter-files/src/sections/flow-shield/index.ts?raw';
+import liveEnvSceneTs from '../../starter-files/src/sections/live-env/index.ts?raw';
+import alpha6SceneTs from '../../starter-files/src/sections/alpha6/index.ts?raw';
 import scrollPhasesTs from '../../starter-files/src/lib/scroll-phases.ts?raw';
 import renderPipelineTs from '../../starter-files/src/lib/render-pipeline.ts?raw';
-import helveticaTs from '../../starter-files/src/lib/helvetica.ts?raw';
 import audioEngineTs from '../../starter-files/src/lib/audio-engine.ts?raw';
 import scrollerStoreTs from '../../starter-files/src/store/useScrollerStore.ts?raw';
 import landingTsx from '../../starter-files/src/components/Landing.tsx?raw';
@@ -49,9 +56,15 @@ export const STARTER_FILES: Record<string, string> = {
   '/src/App.tsx': appTsx,
   '/src/styles.css': stylesCss,
   '/src/sections/registry.ts': registryTs,
+  '/src/sections/shared.ts': sharedSceneTs,
+  '/src/sections/kinetic/index.ts': kineticSceneTs,
+  '/src/sections/kinetic/center-text.ts': kineticCenterTextTs,
+  '/src/sections/kinetic/helvetica.ts': kineticHelveticaTs,
+  '/src/sections/flow-shield/index.ts': flowShieldSceneTs,
+  '/src/sections/live-env/index.ts': liveEnvSceneTs,
+  '/src/sections/alpha6/index.ts': alpha6SceneTs,
   '/src/lib/scroll-phases.ts': scrollPhasesTs,
   '/src/lib/render-pipeline.ts': renderPipelineTs,
-  '/src/lib/helvetica.ts': helveticaTs,
   '/src/lib/audio-engine.ts': audioEngineTs,
   '/src/store/useScrollerStore.ts': scrollerStoreTs,
   '/src/components/Landing.tsx': landingTsx,
