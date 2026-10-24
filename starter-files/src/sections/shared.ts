@@ -13,9 +13,16 @@ export type Pointer = { x: number; y: number };
 
 export type ChapterWorld = {
   group: THREE.Group;
+  /**
+   * Camera distance for scenes scaled differently from the default 9.6. A
+   * function lets a scene fit its geometry to the current aspect ratio.
+   */
+  cameraDistance?: number | ((aspect: number) => number);
   resize?: (aspect: number) => void;
   /** Optional interaction hook; `point` is in world space. */
   onPointerDown?: (point: THREE.Vector3) => void;
+  /** Release async resources (loaders, decoded assets) on unmount. */
+  dispose?: () => void;
   update: (time: number, pointer: Pointer, phase?: SectionPhaseState) => void;
 };
 

@@ -89,12 +89,6 @@ automatically during `npm run build`).
   running app without a page reload.
 - **Manage files** with the explorer: create, rename, delete, drag-free context
   menus, and a fuzzy name filter.
-- **Collect references.** The References icon in the activity rail opens a file
-  manager for uploaded ZIPs. Archives are safely extracted (path traversal and
-  archive bombs are rejected) into the project's OPFS `reference/` folder.
-  Browse the extracted tree, preview images and text, download files, or remove
-  them. Reference files stay outside the VFS, the preview server, and project
-  exports.
 - **Run shell commands** against the same VFS: `ls`, `cd`, `cat`, `tree`,
   `echo "…" > file`, `mkdir`, `touch`, `rm -r`, `mv`, `cp`, `open`.
 - **Keep your work automatically.** Every file change is mirrored into OPFS and
@@ -208,7 +202,6 @@ Project code is persisted in the browser's Origin Private File System:
 ```
 sandbox/<ide-sandbox-id>/projects/<project-id>/<project files…>
 sandbox/<ide-sandbox-id>/projects/<project-id>/agent-state.json
-sandbox/<ide-sandbox-id>/projects/<project-id>/reference/<uploaded files…>
 sandbox/<ide-sandbox-id>/projects/<project-id>/.forge/project.json
 ```
 
@@ -228,10 +221,6 @@ sandbox/<ide-sandbox-id>/projects/<project-id>/.forge/project.json
   task plan, queue, and undo snapshot, is debounced while the agent runs, and is
   restored on reload or when importing a project. New projects start with an
   empty transcript.
-- Uploaded reference material lives in `projects/<project-id>/reference/` and
-  is excluded from the virtual file system, the project export, and the agent's
-  tools. It is preserved across project replacement and moved with a project
-  when its id changes.
 - Browsers without OPFS fall back to the previous in-memory behaviour; the sink
   no-ops and the app still runs.
 
@@ -285,7 +274,7 @@ tree, tabs, buffers, logs, project metadata, and layout.
 ├── vite.config.ts          # React + Nitro + almostnode SW middleware
 ├── src/
 │   ├── App.tsx             # IDE shell and split layout
-│   ├── components/         # title bar, explorer, reference manager, editor…
+│   ├── components/         # title bar, explorer, editor, preview, terminal…
 │   │   └── agent/          # AgentPanel and markdown renderer
 │   ├── lib/
 │   │   ├── runtime.ts      # VirtualFS + ViteDevServer + service worker
@@ -293,12 +282,11 @@ tree, tabs, buffers, logs, project metadata, and layout.
 │   │   ├── bootstrap.ts    # OPFS → starter hydration; binds the sink
 │   │   ├── shell.ts        # in-browser shell over the VFS
 │   │   ├── opfs.ts         # OPFS project store + runtime file sink
-│   │   ├── reference-archive.ts  # safe ZIP extraction for references
 │   │   ├── agent-client.ts  # Pi harness status client
 │   │   ├── pi-harness.ts    # pi-agent-core session + pi-ai transport
 │   │   ├── agent-tools.ts   # in-tab tool schemas + VFS/bash execution
 │   │   └── api.ts           # authentication client
-│   └── store/              # runtime · workspace · projects · references · ui · agent
+│   └── store/              # runtime · workspace · projects · ui · agent (Zustand)
 ├── server/
 │   ├── routes/api/         # Nitro routes (/api/health, /api/anthropic,
 │   │                       #   /api/agent, /api/auth)

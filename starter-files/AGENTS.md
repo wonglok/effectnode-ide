@@ -59,7 +59,7 @@ and external coding agents should follow these rules when changing the project.
 - `src/sections/soft-room/` — chapter 1 sunlit room with soft window shadows.
 - `src/sections/force-shield/` — chapter 2 TSL force-field scene.
 - `src/sections/kinetic/` — chapter 3 scene, glass title, and bundled font.
-- `src/sections/flow-shield/` — chapter 4 flow-line scene.
+- `src/sections/apartment/` — chapter 4 HDR-lit apartment GLB scene.
 - `src/sections/live-env/` — chapter 5 scene.
 - `src/sections/alpha6/` — chapter 6 scene.
 - `src/sections/shared.ts` — shared chapter types and TSL scene helpers.

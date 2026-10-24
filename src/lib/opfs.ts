@@ -20,28 +20,6 @@ const LOCAL_PROJECT_KEY = 'forge.localProject';
 const META_DIR = '.forge';
 const META_FILE = 'project.json';
 
-/**
- * Reserved folder for uploaded reference material. It lives inside the same
- * OPFS project folder as the code but never enters the almostnode VFS, so
- * binary files stay byte-for-byte intact and are excluded from exports.
- */
-export const REFERENCE_DIR = 'reference';
-
-export interface ReferenceEntry {
-  /** Path relative to the reference root, always starting with `/`. */
-  path: string;
-  name: string;
-  kind: 'file' | 'dir';
-  size: number;
-  modified: number;
-}
-
-export interface ReferenceFile {
-  /** Path relative to the reference root, without a leading slash. */
-  path: string;
-  data: Uint8Array;
-}
-
 export interface LocalProjectMeta {
   id: string;
   name: string;
@@ -345,38 +323,22 @@ class OpfsProjectStore {
       const projects = await this.projectsDir(true);
       if (!projects || !validId(projectId)) return;
 
-      let project: FileSystemDirectoryHandle;
-      try {
-        project = await projects.getDirectoryHandle(projectId, { create: false });
-      } catch {
-        project = await projects.getDirectoryHandle(projectId, { create: true });
-      }
-
       let preservedState = agentState;
       if (preservedState === undefined) {
-        preservedState = await readAgentStateHandle(project);
+        try {
+          const existing = await projects.getDirectoryHandle(projectId, { create: false });
+          preservedState = await readAgentStateHandle(existing);
+        } catch {
+          preservedState = null;
+        }
       }
 
-      // Clear only the project code. Reserved entries survive so reference
-      // uploads and the transcript are not lost when the project is replaced.
-      const keep = new Set([REFERENCE_DIR, META_DIR, AGENT_STATE_FILENAME]);
-      const entries: string[] = [];
-      for await (const [name] of project) entries.push(name);
-      for (const name of entries) {
-        if (keep.has(name)) continue;
-        try {
-          await project.removeEntry(name, { recursive: true });
-        } catch {
-          // Already gone.
-        }
+      try {
+        await projects.removeEntry(projectId, { recursive: true });
+      } catch {
+        // First write for this project.
       }
-      if (preservedState === null) {
-        try {
-          await project.removeEntry(AGENT_STATE_FILENAME);
-        } catch {
-          // There was no transcript.
-        }
-      }
+      const project = await projects.getDirectoryHandle(projectId, { create: true });
 
       for (const [virtualPath, content] of Object.entries(files)) {
         const segments = safeSegments(virtualPath);
@@ -435,178 +397,7 @@ class OpfsProjectStore {
       source.manifest ?? { name: 'saved project' },
       agentState
     );
-
-    // Carry the OPFS reference folder across the id change.
-    const sourceRoot = await this.referenceDir(fromId, false);
-    if (sourceRoot) {
-      const references: ReferenceFile[] = [];
-      const collect = async (
-        directory: FileSystemDirectoryHandle,
-        prefix: string
-      ): Promise<void> => {
-        for await (const [name, handle] of directory) {
-          const path = `${prefix}/${name}`;
-          if (handle.kind === 'file') {
-            try {
-              const file = await (handle as FileSystemFileHandle).getFile();
-              references.push({
-                path,
-                data: new Uint8Array(await file.arrayBuffer()),
-              });
-            } catch {
-              // Skip unreadable files.
-            }
-          } else {
-            await collect(handle as FileSystemDirectoryHandle, path);
-          }
-        }
-      };
-      await collect(sourceRoot, '');
-      if (references.length > 0) {
-        await this.writeReferences(toId, references);
-      }
-    }
-
     await this.deleteProject(fromId);
-  }
-
-  /* ── Reference folder ─────────────────────────────────────
-   * Lives at `projects/<projectId>/reference/**` and is deliberately outside
-   * the VFS: uploads can be images, PDFs, models, or any other binary.
-   */
-
-  private async referenceDir(
-    projectId: string,
-    create: boolean
-  ): Promise<FileSystemDirectoryHandle | null> {
-    const project = await this.projectDir(projectId, create);
-    if (!project) return null;
-    try {
-      return await project.getDirectoryHandle(REFERENCE_DIR, { create });
-    } catch {
-      return null;
-    }
-  }
-
-  /** Flat list of the reference folder; the UI builds a tree from it. */
-  readReferences(projectId: string): Promise<ReferenceEntry[]> {
-    return this.run(async () => {
-      const root = await this.referenceDir(projectId, false);
-      if (!root) return [];
-      const entries: ReferenceEntry[] = [];
-
-      const walk = async (
-        directory: FileSystemDirectoryHandle,
-        prefix: string
-      ): Promise<void> => {
-        for await (const [name, handle] of directory) {
-          const path = `${prefix}/${name}`;
-          if (handle.kind === 'file') {
-            try {
-              const file = await (handle as FileSystemFileHandle).getFile();
-              entries.push({
-                path,
-                name,
-                kind: 'file',
-                size: file.size,
-                modified: file.lastModified,
-              });
-            } catch {
-              // Skip unreadable entries.
-            }
-          } else {
-            entries.push({
-              path,
-              name,
-              kind: 'dir',
-              size: 0,
-              modified: 0,
-            });
-            await walk(handle as FileSystemDirectoryHandle, path);
-          }
-        }
-      };
-
-      await walk(root, '');
-      entries.sort((a, b) => a.path.localeCompare(b.path));
-      return entries;
-    });
-  }
-
-  /** Extract writes into the reference folder without touching the VFS. */
-  writeReferences(projectId: string, files: ReferenceFile[]): Promise<number> {
-    return this.run(async () => {
-      const root = await this.referenceDir(projectId, true);
-      if (!root) throw new Error('OPFS reference storage is unavailable');
-
-      let written = 0;
-      for (const file of files) {
-        const segments = safeSegments(`/${file.path}`);
-        if (!segments) continue;
-        const name = segments.pop();
-        if (!name) continue;
-        const parent = await ensureSubdir(root, segments, true);
-        const handle = await parent.getFileHandle(name, { create: true });
-        const writable = await handle.createWritable();
-        // Copy into a plain ArrayBuffer so the write stream sees no
-        // SharedArrayBuffer widening from the unzip output.
-        const buffer = file.data.buffer.slice(
-          file.data.byteOffset,
-          file.data.byteOffset + file.data.byteLength,
-        ) as ArrayBuffer;
-        await writable.write(buffer);
-        await writable.close();
-        written += 1;
-      }
-      return written;
-    });
-  }
-
-  readReferenceFile(projectId: string, path: string): Promise<File | null> {
-    return this.run(async () => {
-      const root = await this.referenceDir(projectId, false);
-      if (!root) return null;
-      const segments = safeSegments(path);
-      if (!segments) return null;
-      const name = segments.pop();
-      if (!name) return null;
-      try {
-        const parent = await ensureSubdir(root, segments, false);
-        const handle = await parent.getFileHandle(name, { create: false });
-        return await handle.getFile();
-      } catch {
-        return null;
-      }
-    });
-  }
-
-  deleteReference(projectId: string, path: string): Promise<void> {
-    return this.run(async () => {
-      const root = await this.referenceDir(projectId, false);
-      if (!root) return;
-      const segments = safeSegments(path);
-      if (!segments) return;
-      const name = segments.pop();
-      if (!name) return;
-      try {
-        const parent = await ensureSubdir(root, segments, false);
-        await parent.removeEntry(name, { recursive: true });
-      } catch {
-        // Already gone.
-      }
-    });
-  }
-
-  clearReferences(projectId: string): Promise<void> {
-    return this.run(async () => {
-      const project = await this.projectDir(projectId, false);
-      if (!project) return;
-      try {
-        await project.removeEntry(REFERENCE_DIR, { recursive: true });
-      } catch {
-        // Nothing to clear.
-      }
-    });
   }
 
   deleteProject(projectId: string): Promise<void> {
@@ -703,14 +494,7 @@ async function readTree(
   files: Record<string, string>
 ): Promise<void> {
   for await (const [name, handle] of directory) {
-    if (
-      !prefix &&
-      (name === META_DIR ||
-        name === AGENT_STATE_FILENAME ||
-        name === REFERENCE_DIR)
-    ) {
-      continue;
-    }
+    if (!prefix && (name === META_DIR || name === AGENT_STATE_FILENAME)) continue;
     const virtualPath = `${prefix}/${name}`;
     if (handle.kind === 'file') {
       try {

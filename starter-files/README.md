@@ -21,7 +21,8 @@ to a static CSS stage instead of falling back to Canvas 2D.
 - **03 Kinetic** — a field of orbiting particles and a multiline
   “Welcome to my template” title drawn with `TextGeometry` in transmission
   glass.
-- **04 Flow Lines** — force lines bending around a silhouette.
+- **04 Apartment** — a scanned interior lit by a photo-studio HDRI, with a
+  Draco-compressed GLB and AVIF textures.
 - **05 Live Env** — a wireframe skyline, receding grid, and floating monoliths.
 - **06 Alpha 6** — glass shards built from gradients and geometry.
 
@@ -48,13 +49,18 @@ the active chapter (`#/scene-02`), and reloading resumes at that chapter.
   - `src/sections/force-shield/index.ts` — TSL force-field sphere with hex grid,
     flow noise, reveal dissolve, and impact rings.
   - `src/sections/kinetic/index.ts` — instanced glints plus the glass title.
-  - `src/sections/flow-shield/index.ts` — displaced flow lines around an outline.
+  - `src/sections/apartment/index.ts` — scanned apartment GLB (Draco + AVIF),
+    normalized into the frame and lit by the photo-studio HDRI.
   - `src/sections/live-env/index.ts` — wireframe city over a breathing grid.
   - `src/sections/alpha6/index.ts` — fresnel-lit glass shards.
   Each world has its own scene, camera, and render pass; the scroll phase drifts
   and scales the world as it enters or leaves. The kinetic title uses
   `MeshPhysicalNodeMaterial` transmission, dispersion and clearcoat with a
-  prefiltered room environment.
+  prefiltered room environment. Chapter 4 prefilters the photo-studio HDRI with
+  `PMREMGenerator` and assigns it as that scene's environment.
+- `src/lib/assets.ts` — fetches and decodes the base64 binary starter assets.
+- `src/assets/photo_studio_01_1k.hdr.b64` — the chapter 4 environment map.
+- `src/assets/apartment.glb.b64` — the chapter 4 apartment model.
 - `src/sections/shared.ts` — shared scene types and TSL helpers (glow plane,
   orbit rings).
 - `src/sections/kinetic/helvetica.ts` — the Helvetiker outline bundled for

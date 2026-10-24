@@ -2,14 +2,16 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three/webgpu";
 import { pass } from "three/tsl";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { HDRLoader } from "three/addons/loaders/HDRLoader.js";
 import { SECTIONS } from "../sections/registry.ts";
 import { buildSoftRoom } from "../sections/soft-room/index.ts";
 import { buildForceShield } from "../sections/force-shield/index.ts";
 import { buildKinetic } from "../sections/kinetic/index.ts";
-import { buildFlow } from "../sections/flow-shield/index.ts";
+import { buildApartment } from "../sections/apartment/index.ts";
 import { buildLiveEnv } from "../sections/live-env/index.ts";
 import { buildAlpha } from "../sections/alpha6/index.ts";
 import type { ChapterWorld, Pointer } from "../sections/shared.ts";
+import { loadBinaryAsset } from "../lib/assets.ts";
 import { SectionRenderPipeline } from "../lib/render-pipeline.ts";
 import { getSectionPhaseAt } from "../lib/scroll-phases.ts";
 import { useScrollerStore } from "../store/useScrollerStore.ts";
@@ -18,7 +20,7 @@ const BUILDERS = [
   buildSoftRoom,
   buildForceShield,
   buildKinetic,
-  buildFlow,
+  buildApartment,
   buildLiveEnv,
   buildAlpha,
 ];
@@ -104,6 +106,7 @@ export function SceneStage() {
     let renderer: THREE.WebGPURenderer | null = null;
     let pipeline: SectionRenderPipeline | null = null;
     let envTarget: THREE.RenderTarget | null = null;
+    let hdrTarget: THREE.RenderTarget | null = null;
     let roomEnv: RoomEnvironment | null = null;
     let disposed = false;
 
@@ -167,6 +170,29 @@ export function SceneStage() {
         console.warn("Glass environment unavailable:", error);
       }
 
+      // Scene 4 is lit by the photo-studio HDRI instead of the neutral room.
+      try {
+        const buffer = await loadBinaryAsset(
+          new URL("../assets/photo_studio_01_1k.hdr.b64", import.meta.url),
+        );
+        const hdrTexture = new HDRLoader().createDataTexture(buffer);
+        hdrTexture.mapping = THREE.EquirectangularReflectionMapping;
+        const pmrem = new THREE.PMREMGenerator(renderer);
+        hdrTarget = pmrem.fromEquirectangular(hdrTexture);
+        hdrTexture.dispose();
+        pmrem.dispose();
+
+        const apartmentIndex = SECTIONS.findIndex(
+          (section) => section.id === "apartment",
+        );
+        if (apartmentIndex >= 0) {
+          scenes[apartmentIndex].environment = hdrTarget.texture;
+          scenes[apartmentIndex].environmentIntensity = 1.25;
+        }
+      } catch (error) {
+        console.warn("Photo studio environment unavailable:", error);
+      }
+
       try {
         pipeline = new SectionRenderPipeline(renderer, passes);
         pipeline.prewarm();
@@ -217,10 +243,15 @@ export function SceneStage() {
                 ? phase.progress
                 : 0;
 
+          const configuredDistance = world.cameraDistance;
+          const distance =
+            typeof configuredDistance === "function"
+              ? configuredDistance(camera.aspect)
+              : (configuredDistance ?? 9.6);
           camera.position.x = pointer.x * 0.45;
           camera.position.y = -pointer.y * 0.32;
           camera.position.z =
-            9.6 + Math.sin(time * 0.24 + index) * 0.12 + lift * 0.9;
+            distance + Math.sin(time * 0.24 + index) * 0.12 + lift * 0.9;
           camera.lookAt(0, 0, 0);
         }
 
@@ -256,6 +287,7 @@ export function SceneStage() {
       canvas.removeEventListener("pointerdown", onPointerDown);
 
       worlds.forEach((world) => {
+        world.dispose?.();
         world.group.traverse((object) => {
           const mesh = object as THREE.Mesh;
           mesh.geometry?.dispose();
@@ -278,6 +310,8 @@ export function SceneStage() {
 
       envTarget?.dispose();
       envTarget = null;
+      hdrTarget?.dispose();
+      hdrTarget = null;
       roomEnv?.dispose();
       roomEnv = null;
 

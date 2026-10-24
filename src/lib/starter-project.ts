@@ -28,9 +28,12 @@ import forceShieldSceneTs from '../../starter-files/src/sections/force-shield/in
 import kineticSceneTs from '../../starter-files/src/sections/kinetic/index.ts?raw';
 import kineticCenterTextTs from '../../starter-files/src/sections/kinetic/center-text.ts?raw';
 import kineticHelveticaTs from '../../starter-files/src/sections/kinetic/helvetica.ts?raw';
-import flowShieldSceneTs from '../../starter-files/src/sections/flow-shield/index.ts?raw';
+import apartmentSceneTs from '../../starter-files/src/sections/apartment/index.ts?raw';
 import liveEnvSceneTs from '../../starter-files/src/sections/live-env/index.ts?raw';
 import alpha6SceneTs from '../../starter-files/src/sections/alpha6/index.ts?raw';
+import assetsHelperTs from '../../starter-files/src/lib/assets.ts?raw';
+import photoStudioHdr from '../../starter-files/src/assets/photo_studio_01_1k.hdr.b64?raw';
+import apartmentGlb from '../../starter-files/src/assets/apartment.glb.b64?raw';
 import scrollPhasesTs from '../../starter-files/src/lib/scroll-phases.ts?raw';
 import renderPipelineTs from '../../starter-files/src/lib/render-pipeline.ts?raw';
 import audioEngineTs from '../../starter-files/src/lib/audio-engine.ts?raw';
@@ -64,12 +67,15 @@ export const STARTER_FILES: Record<string, string> = {
   '/src/sections/kinetic/index.ts': kineticSceneTs,
   '/src/sections/kinetic/center-text.ts': kineticCenterTextTs,
   '/src/sections/kinetic/helvetica.ts': kineticHelveticaTs,
-  '/src/sections/flow-shield/index.ts': flowShieldSceneTs,
+  '/src/sections/apartment/index.ts': apartmentSceneTs,
   '/src/sections/live-env/index.ts': liveEnvSceneTs,
   '/src/sections/alpha6/index.ts': alpha6SceneTs,
+  '/src/lib/assets.ts': assetsHelperTs,
   '/src/lib/scroll-phases.ts': scrollPhasesTs,
   '/src/lib/render-pipeline.ts': renderPipelineTs,
   '/src/lib/audio-engine.ts': audioEngineTs,
+  '/src/assets/photo_studio_01_1k.hdr.b64': photoStudioHdr,
+  '/src/assets/apartment.glb.b64': apartmentGlb,
   '/src/store/useScrollerStore.ts': scrollerStoreTs,
   '/src/components/Landing.tsx': landingTsx,
   '/src/components/StoryRouter.tsx': storyRouterTsx,

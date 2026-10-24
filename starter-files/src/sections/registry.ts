@@ -37,10 +37,10 @@ export const SECTIONS: SectionMeta[] = [
     surface: '#021019',
   },
   {
-    id: 'flow-shield',
+    id: 'apartment',
     index: 3,
     chapter: '04',
-    name: 'Flow Lines',
+    name: 'Apartment',
     accent: '#26aeff',
     surface: '#0e0d0c',
   },
