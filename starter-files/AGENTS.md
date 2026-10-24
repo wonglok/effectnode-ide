@@ -31,9 +31,12 @@ and external coding agents should follow these rules when changing the project.
   `three/webgpu` and `three/tsl` before adding it.
 - The chapter 3 title uses per-line `TextGeometry` with
   `MeshPhysicalNodeMaterial` transmission. Keep that path WebGPU-compatible.
-- Each chapter owns its scene, camera, and render pass. Scene drawing code lives
-  in `src/sections/<scene>/index.ts`; `RenderPipeline` composes the scenes and
-  applies the shared finish and transitions.
+- Each chapter owns its scene, camera instance, and render pass. Scene drawing
+  code lives in `src/sections/<scene>/index.ts`; `RenderPipeline` composes the
+  scenes and applies the shared finish and transitions. Build the camera with
+  `createChapterCamera` and frame it with `frameChapterCamera` (or set it
+  directly for an interior rig). `SceneStage` only reads each world's camera —
+  do not reintroduce a shared camera.
 - Dispose of geometries, materials, render targets, and PMREM resources when
   removing a scene or effect.
 
@@ -59,7 +62,10 @@ and external coding agents should follow these rules when changing the project.
 - `src/sections/soft-room/` — chapter 1 sunlit room with soft window shadows.
 - `src/sections/force-shield/` — chapter 2 TSL force-field scene.
 - `src/sections/kinetic/` — chapter 3 scene, glass title, and bundled font.
-- `src/sections/apartment/` — chapter 4 HDR-lit apartment GLB scene.
+- `src/sections/apartment/` — chapter 4 interior camera in the studio-lit apartment GLB.
+- `public/studio.hdr`, `public/apartment.glb` — chapter 4 binaries served from
+  the public root. Request them with relative URLs (`studio.hdr`,
+  `apartment.glb`) so they also resolve under the IDE preview's URL prefix.
 - `src/sections/live-env/` — chapter 5 scene.
 - `src/sections/alpha6/` — chapter 6 scene.
 - `src/sections/shared.ts` — shared chapter types and TSL scene helpers.

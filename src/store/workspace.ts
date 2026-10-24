@@ -89,14 +89,16 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   refresh: () => {
     const vfs = runtime.getVfs();
     if (!vfs) return;
-    set({ tree: buildFileTree(vfs) });
+    set({ tree: buildFileTree(vfs, (path) => runtime.isServedAsset(path)) });
   },
 
   loadFiles: (files, entry) => {
     for (const key of [...writeTimers.keys()]) cancelWrite(key);
 
     const vfs = runtime.getVfs();
-    const tree = vfs ? buildFileTree(vfs) : [];
+    const tree = vfs
+      ? buildFileTree(vfs, (path) => runtime.isServedAsset(path))
+      : [];
     const expanded: Record<string, boolean> = {};
     for (const dir of allDirectories(tree)) expanded[dir] = true;
 

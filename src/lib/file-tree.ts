@@ -17,14 +17,19 @@ function sortNodes(nodes: TreeNode[]): TreeNode[] {
   });
 }
 
-function walk(vfs: VirtualFS, dir: string): TreeNode[] {
+function walk(
+  vfs: VirtualFS,
+  dir: string,
+  skip?: (path: string) => boolean
+): TreeNode[] {
   const nodes: TreeNode[] = [];
   for (const name of vfs.readdirSync(dir)) {
     if (IGNORED.has(name)) continue;
     const path = joinPath(dir, name);
+    if (skip?.(path)) continue;
     const stats = vfs.statSync(path);
     if (stats.isDirectory()) {
-      nodes.push({ name, path, type: 'dir', children: walk(vfs, path) });
+      nodes.push({ name, path, type: 'dir', children: walk(vfs, path, skip) });
     } else {
       nodes.push({ name, path, type: 'file' });
     }
@@ -32,9 +37,12 @@ function walk(vfs: VirtualFS, dir: string): TreeNode[] {
   return sortNodes(nodes);
 }
 
-export function buildFileTree(vfs: VirtualFS): TreeNode[] {
+export function buildFileTree(
+  vfs: VirtualFS,
+  skip?: (path: string) => boolean
+): TreeNode[] {
   try {
-    return walk(vfs, '/');
+    return walk(vfs, '/', skip);
   } catch {
     return [];
   }

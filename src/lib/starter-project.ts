@@ -4,6 +4,11 @@
  * build time with Vite's `?raw` imports, so they stay readable and editable
  * while the browser receives plain strings.
  *
+ * Binary public assets (the chapter 4 HDRI and GLB) are kept out of that text
+ * map. They live in `starter-files/public` and are fetched as bytes when a
+ * project needs them, then mounted into the virtual file system at the root so
+ * the in-browser dev server serves them like Vite's public directory.
+ *
  * The starter is a six-chapter, scroll-driven landing page for MY COMPANY:
  * a Zustand scroll store, a chapter timeline, and one canvas that draws every
  * scene. Each chapter's drawing code lives in its own `src/sections/<scene>/`
@@ -31,9 +36,11 @@ import kineticHelveticaTs from '../../starter-files/src/sections/kinetic/helveti
 import apartmentSceneTs from '../../starter-files/src/sections/apartment/index.ts?raw';
 import liveEnvSceneTs from '../../starter-files/src/sections/live-env/index.ts?raw';
 import alpha6SceneTs from '../../starter-files/src/sections/alpha6/index.ts?raw';
-import assetsHelperTs from '../../starter-files/src/lib/assets.ts?raw';
-import photoStudioHdr from '../../starter-files/src/assets/photo_studio_01_1k.hdr.b64?raw';
-import apartmentGlb from '../../starter-files/src/assets/apartment.glb.b64?raw';
+// `.glb`/`.hdr` are registered in Vite's `assetsInclude`, so these resolve to
+// asset URLs in dev (served by Vite's asset middleware, ahead of Nitro's SPA
+// fallback) and to hashed files in the production build.
+import apartmentGlbUrl from '../../starter-files/public/apartment.glb?url';
+import studioHdrUrl from '../../starter-files/public/studio.hdr?url';
 import scrollPhasesTs from '../../starter-files/src/lib/scroll-phases.ts?raw';
 import renderPipelineTs from '../../starter-files/src/lib/render-pipeline.ts?raw';
 import audioEngineTs from '../../starter-files/src/lib/audio-engine.ts?raw';
@@ -70,12 +77,9 @@ export const STARTER_FILES: Record<string, string> = {
   '/src/sections/apartment/index.ts': apartmentSceneTs,
   '/src/sections/live-env/index.ts': liveEnvSceneTs,
   '/src/sections/alpha6/index.ts': alpha6SceneTs,
-  '/src/lib/assets.ts': assetsHelperTs,
   '/src/lib/scroll-phases.ts': scrollPhasesTs,
   '/src/lib/render-pipeline.ts': renderPipelineTs,
   '/src/lib/audio-engine.ts': audioEngineTs,
-  '/src/assets/photo_studio_01_1k.hdr.b64': photoStudioHdr,
-  '/src/assets/apartment.glb.b64': apartmentGlb,
   '/src/store/useScrollerStore.ts': scrollerStoreTs,
   '/src/components/Landing.tsx': landingTsx,
   '/src/components/StoryRouter.tsx': storyRouterTsx,
@@ -88,3 +92,40 @@ export const STARTER_FILES: Record<string, string> = {
 
 /** Files opened as tabs on first boot. */
 export const STARTER_ENTRY = '/src/components/Landing.tsx';
+
+/**
+ * Binary public assets, keyed by the path the starter fetches them from.
+ * Vite gives us the URL for the file in both dev and the production build.
+ */
+export const STARTER_ASSETS: Record<string, string> = {
+  '/apartment.glb': apartmentGlbUrl,
+  '/studio.hdr': studioHdrUrl,
+};
+
+/** A project only needs the starter binaries when chapter 4 is present. */
+export const STARTER_ASSET_ENTRY = '/src/sections/apartment/index.ts';
+
+let starterAssetsPromise: Promise<Record<string, Uint8Array>> | null = null;
+
+/** Fetch the public binaries once, then reuse the decoded bytes. */
+export function loadStarterAssets(): Promise<Record<string, Uint8Array>> {
+  starterAssetsPromise ??= (async () => {
+    const entries = await Promise.all(
+      Object.entries(STARTER_ASSETS).map(async ([path, url]) => {
+        const response = await fetch(url);
+        if (!response.ok) {
+          throw new Error(
+            `Could not load starter asset ${path} (HTTP ${response.status})`
+          );
+        }
+        return [path, new Uint8Array(await response.arrayBuffer())] as const;
+      })
+    );
+    return Object.fromEntries(entries);
+  })().catch((error) => {
+    starterAssetsPromise = null;
+    throw error;
+  });
+
+  return starterAssetsPromise;
+}

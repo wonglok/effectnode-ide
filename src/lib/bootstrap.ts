@@ -13,7 +13,12 @@ import {
   type OpfsProject,
 } from './opfs';
 import { runtime } from './runtime';
-import { STARTER_FILES, STARTER_PROJECT_NAME } from './starter-project';
+import {
+  loadStarterAssets,
+  STARTER_ASSET_ENTRY,
+  STARTER_FILES,
+  STARTER_PROJECT_NAME,
+} from './starter-project';
 
 let bootstrapPromise: Promise<void> | null = null;
 
@@ -41,10 +46,29 @@ async function readCached(projectId: string): Promise<OpfsProject | null> {
   }
 }
 
+/** Load the binary starter assets only for projects that use chapter 4. */
+async function assetsFor(
+  files: Record<string, string>
+): Promise<Record<string, Uint8Array>> {
+  if (files[STARTER_ASSET_ENTRY] === undefined) return {};
+  try {
+    return await loadStarterAssets();
+  } catch (error) {
+    runtime.log(
+      'warn',
+      `Could not load binary starter assets: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+    return {};
+  }
+}
+
 async function hydrate(
   files: Record<string, string>,
   meta: LocalProjectMeta,
-  seedOpfs: boolean
+  seedOpfs: boolean,
+  assets: Record<string, Uint8Array> = {}
 ): Promise<void> {
   const projectId = meta.id;
   const name = meta.name;
@@ -68,7 +92,7 @@ async function hydrate(
     }
   }
 
-  await useRuntimeStore.getState().boot(files);
+  await useRuntimeStore.getState().boot(files, assets);
   useWorkspaceStore.getState().loadFiles(files);
   await useAgentStore.getState().loadPersisted();
 
@@ -104,7 +128,8 @@ async function run(): Promise<void> {
       await hydrate(
         cached.files,
         metaFromOpfs(activeId, cached, 'Saved project'),
-        false
+        false,
+        await assetsFor(cached.files)
       );
       return;
     }
@@ -115,11 +140,21 @@ async function run(): Promise<void> {
   if (local) {
     const cached = await readCached(local.id);
     if (cached && Object.keys(cached.files).length > 0) {
-      await hydrate(cached.files, local, false);
+      await hydrate(
+        cached.files,
+        local,
+        false,
+        await assetsFor(cached.files)
+      );
       return;
     }
   }
 
   const starter = createLocalProject(STARTER_PROJECT_NAME);
-  await hydrate(STARTER_FILES, starter, true);
+  await hydrate(
+    STARTER_FILES,
+    starter,
+    true,
+    await assetsFor(STARTER_FILES)
+  );
 }

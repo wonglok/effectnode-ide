@@ -1,8 +1,7 @@
 import * as THREE from "three/webgpu";
 import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { loadBinaryAsset } from "../../lib/assets.ts";
-import { glowPlane, type ChapterWorld } from "../shared.ts";
+import type { ChapterWorld } from "../shared.ts";
 
 /* ── 04 Apartment: photo-studio IBL over a scanned interior ──────────────── */
 
@@ -33,12 +32,6 @@ function disposeTree(root: THREE.Object3D) {
 export function buildApartment(accent: string): ChapterWorld {
   const group = new THREE.Group();
 
-  // A faint accent bloom sits behind the model, so the chapter still carries
-  // its blue accent while the studio HDR does the actual lighting.
-  const halo = glowPlane(accent, 22, 0.14);
-  halo.position.set(0, 0.6, -7);
-  group.add(halo);
-
   // The HDR gives the room its soft ambience; this key light restores enough
   // directional contrast to read the architecture.
   const key = new THREE.DirectionalLight(0xfff1dd, 2.4);
@@ -47,7 +40,13 @@ export function buildApartment(accent: string): ChapterWorld {
   group.add(key);
   group.add(key.target);
 
-  const fill = new THREE.DirectionalLight(0x9fc2ff, 0.7);
+  // The fill carries the chapter accent into the interior — visible as a cool
+  // edge on the stair and glass — without overriding the HDR.
+  const accentTint = new THREE.Color(accent).lerp(
+    new THREE.Color(0xffffff),
+    0.55,
+  );
+  const fill = new THREE.DirectionalLight(accentTint, 0.7);
   fill.position.set(-7, 4, 6);
   fill.target.position.set(0, 0, 0);
   group.add(fill);
@@ -65,14 +64,25 @@ export function buildApartment(accent: string): ChapterWorld {
   loader.setDRACOLoader(draco);
 
   let model: THREE.Group | null = null;
-  let restY: number | null = null;
   let disposed = false;
-  let fitDistance: (aspect: number) => number = () => 14.6;
 
-  void loadBinaryAsset(
-    new URL("../../assets/apartment.glb.b64", import.meta.url),
-  )
-    .then((buffer) => loader.parseAsync(buffer, ""))
+  // Interior camera rig, in the normalized model space the GLB is fitted to
+  // (7.4 units across). It stands on the ground floor at eye height in the
+  // open half of the plan, looking past the armchair into the stair spiral.
+  const restPosition = new THREE.Vector3(2.5, -2.45, 2.9);
+  const restTarget = new THREE.Vector3(-1.2, -2.5, 1.5);
+  const cameraPosition = restPosition.clone();
+  const cameraTarget = restTarget.clone();
+
+  const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 120);
+  camera.position.copy(restPosition);
+  camera.lookAt(restTarget);
+  const lookAt = new THREE.Vector3();
+
+  // Relative URLs resolve against the preview's own base (which sits under the
+  // virtual server prefix) and against the site root in a standalone build.
+  void loader
+    .loadAsync("apartment.glb")
     .then((gltf) => {
       if (disposed) {
         disposeTree(gltf.scene);
@@ -124,19 +134,6 @@ export function buildApartment(accent: string): ChapterWorld {
         -center.z * scale,
       );
 
-      // Keep the whole cutaway in frame on both wide previews and the narrow
-      // IDE pane. The camera uses a 42° vertical field of view.
-      const halfFov = (42 * Math.PI) / 360;
-      const margin = 1.22;
-      const heightDistance =
-        (size.y * scale * margin) / (2 * Math.tan(halfFov));
-      const widthDistance = (size.x * scale * margin) / (2 * Math.tan(halfFov));
-      const depth = size.z * scale;
-      fitDistance = (aspect) =>
-        Math.max(heightDistance, widthDistance / Math.max(aspect, 0.35)) +
-        depth * 0.35;
-
-      restY = root.position.y;
       group.add(root);
       model = root;
     })
@@ -147,12 +144,9 @@ export function buildApartment(accent: string): ChapterWorld {
       draco.dispose();
     });
 
-  const restYaw = -0.42;
-  group.rotation.y = restYaw;
-
   return {
     group,
-    cameraDistance: (aspect) => fitDistance(aspect),
+    camera,
     dispose() {
       disposed = true;
       if (model) {
@@ -162,12 +156,25 @@ export function buildApartment(accent: string): ChapterWorld {
       draco.dispose();
     },
     update(time, pointer) {
-      const yaw = restYaw + pointer.x * 0.24 + Math.sin(time * 0.08) * 0.09;
-      group.rotation.y += (yaw - group.rotation.y) * 0.035;
-      group.rotation.x += (pointer.y * 0.045 - group.rotation.x) * 0.035;
-      if (model && restY !== null) {
-        model.position.y = restY + Math.sin(time * 0.35) * 0.035;
-      }
+      // Keep the body still and look around from inside the room. The small
+      // drift keeps the still frame alive without feeling like a turntable.
+      cameraPosition.set(
+        restPosition.x + Math.sin(time * 0.21) * 0.035,
+        restPosition.y + Math.sin(time * 0.3) * 0.025,
+        restPosition.z,
+      );
+      cameraTarget.set(
+        restTarget.x + pointer.x * 0.85 + Math.sin(time * 0.17) * 0.05,
+        restTarget.y - pointer.y * 0.55 + Math.sin(time * 0.23) * 0.04,
+        restTarget.z,
+      );
+
+      // The rig is in group-local space; anchor it through the group matrix so
+      // the interior view stays with the chapter during handoffs.
+      group.updateMatrixWorld(true);
+      camera.position.copy(cameraPosition).applyMatrix4(group.matrixWorld);
+      lookAt.copy(cameraTarget).applyMatrix4(group.matrixWorld);
+      camera.lookAt(lookAt);
     },
   };
 }

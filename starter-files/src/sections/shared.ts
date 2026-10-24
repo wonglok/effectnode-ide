@@ -14,10 +14,10 @@ export type Pointer = { x: number; y: number };
 export type ChapterWorld = {
   group: THREE.Group;
   /**
-   * Camera distance for scenes scaled differently from the default 9.6. A
-   * function lets a scene fit its geometry to the current aspect ratio.
+   * Every chapter owns the camera it renders with. The compositor only reads
+   * it; framing is the chapter's own business.
    */
-  cameraDistance?: number | ((aspect: number) => number);
+  camera: THREE.PerspectiveCamera;
   resize?: (aspect: number) => void;
   /** Optional interaction hook; `point` is in world space. */
   onPointerDown?: (point: THREE.Vector3) => void;
@@ -25,6 +25,38 @@ export type ChapterWorld = {
   dispose?: () => void;
   update: (time: number, pointer: Pointer, phase?: SectionPhaseState) => void;
 };
+
+/**
+ * Default framing for the exterior chapters: pointer parallax, a slow
+ * breathing dolly, and a small lift while the chapter enters or leaves.
+ */
+export function frameChapterCamera(
+  camera: THREE.PerspectiveCamera,
+  index: number,
+  time: number,
+  pointer: Pointer,
+  phase?: SectionPhaseState,
+) {
+  const lift =
+    phase?.phase === "enter"
+      ? 1 - phase.progress
+      : phase?.phase === "exit"
+        ? phase.progress
+        : 0;
+  camera.position.set(
+    pointer.x * 0.45,
+    -pointer.y * 0.32,
+    9.6 + Math.sin(time * 0.24 + index) * 0.12 + lift * 0.9,
+  );
+  camera.lookAt(0, 0, 0);
+}
+
+/** A chapter's own camera, already placed at its resting framing. */
+export function createChapterCamera(index: number) {
+  const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 120);
+  frameChapterCamera(camera, index, 0, { x: 0, y: 0 });
+  return camera;
+}
 
 export function glowPlane(accent: string, size: number, opacity: number) {
   const material = new THREE.MeshBasicNodeMaterial();

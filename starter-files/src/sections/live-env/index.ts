@@ -6,7 +6,12 @@ import {
   time as tslTime,
   vec3,
 } from "three/tsl";
-import { glowPlane, type ChapterWorld } from "../shared.ts";
+import {
+  createChapterCamera,
+  frameChapterCamera,
+  glowPlane,
+  type ChapterWorld,
+} from "../shared.ts";
 
 /* ── 03 Live Env: wireframe city over a breathing grid ───────────────────── */
 
@@ -98,15 +103,20 @@ export function buildLiveEnv(accent: string): ChapterWorld {
   horizon.position.set(0, 3.2, -18);
   group.add(horizon);
 
+  const camera = createChapterCamera(4);
+
   return {
     group,
-    update(time, pointer) {
+    camera,
+    update(time, pointer, phase) {
       monoliths.forEach((monolith, index) => {
         monolith.rotation.y = index * 0.7 + time * (0.08 + index * 0.03);
         monolith.rotation.x = Math.sin(time * 0.25 + index) * 0.04;
       });
       group.rotation.y = pointer.x * 0.08 + Math.sin(time * 0.03) * 0.04;
       group.rotation.x = pointer.y * 0.04;
+
+      frameChapterCamera(camera, 4, time, pointer, phase);
     },
   };
 }

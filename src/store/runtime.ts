@@ -10,7 +10,10 @@ interface RuntimeState {
   previewKey: number;
   lastHmrPath: string | null;
   lastHmrAt: number;
-  boot: (files: Record<string, string>) => Promise<void>;
+  boot: (
+    files: Record<string, string>,
+    assets?: Record<string, Uint8Array>
+  ) => Promise<void>;
   retryPreview: () => Promise<void>;
   addLog: (level: LogLevel, message: string) => void;
   clearLogs: () => void;
@@ -30,9 +33,9 @@ export const useRuntimeStore = create<RuntimeState>((set) => ({
   lastHmrPath: null,
   lastHmrAt: 0,
 
-  boot: async (files) => {
+  boot: async (files, assets = {}) => {
     try {
-      await runtime.boot(files);
+      await runtime.boot(files, assets);
       set({ previewUrl: runtime.previewUrl });
     } catch {
       // The runtime emits a status + log event; nothing else to do here.
@@ -132,8 +135,11 @@ if (import.meta.hot) {
 }
 
 // A tiny helper used by the top bar's "restart" action.
-export async function restartWithFiles(files: Record<string, string>): Promise<void> {
+export async function restartWithFiles(
+  files: Record<string, string>,
+  assets: Record<string, Uint8Array> = {}
+): Promise<void> {
   // replaceProject emits 'restarted', which updates previewUrl + previewKey.
-  await runtime.replaceProject(files);
+  await runtime.replaceProject(files, assets);
 }
 

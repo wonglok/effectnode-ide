@@ -11,7 +11,6 @@ import { buildApartment } from "../sections/apartment/index.ts";
 import { buildLiveEnv } from "../sections/live-env/index.ts";
 import { buildAlpha } from "../sections/alpha6/index.ts";
 import type { ChapterWorld, Pointer } from "../sections/shared.ts";
-import { loadBinaryAsset } from "../lib/assets.ts";
 import { SectionRenderPipeline } from "../lib/render-pipeline.ts";
 import { getSectionPhaseAt } from "../lib/scroll-phases.ts";
 import { useScrollerStore } from "../store/useScrollerStore.ts";
@@ -49,8 +48,9 @@ export function SceneStage() {
       BUILDERS[index % BUILDERS.length](section.accent),
     );
 
-    // Every chapter owns a scene and a camera. The compositor renders only the
-    // active one — or the two chapters mid-handoff — into its own pass texture.
+    // Every chapter owns a scene and its own camera. The compositor renders
+    // only the active one — or the two chapters mid-handoff — into its own
+    // pass texture.
     const scenes = SECTIONS.map((section, index) => {
       const scene = new THREE.Scene();
       scene.background = new THREE.Color(section.surface);
@@ -58,13 +58,9 @@ export function SceneStage() {
       return scene;
     });
 
-    const cameras = SECTIONS.map(() => {
-      const camera = new THREE.PerspectiveCamera(42, 1, 0.1, 120);
-      camera.position.set(0, 0, 9.6);
-      return camera;
-    });
-
-    const passes = scenes.map((scene, index) => pass(scene, cameras[index]));
+    const passes = scenes.map((scene, index) =>
+      pass(scene, worlds[index].camera),
+    );
 
     const pointer: Pointer = { x: 0, y: 0 };
     const target: Pointer = { x: 0, y: 0 };
@@ -91,10 +87,9 @@ export function SceneStage() {
           ? state.toIndex
           : state.fromIndex;
       const world = worlds[index];
-      const camera = cameras[index];
-      if (!world || !camera) return;
+      if (!world) return;
 
-      raycaster.setFromCamera(pointerNdc, camera);
+      raycaster.setFromCamera(pointerNdc, world.camera);
       const hit = raycaster.intersectObject(world.group, true)[0];
       if (hit) world.onPointerDown?.(hit.point);
     };
@@ -115,11 +110,11 @@ export function SceneStage() {
       width = Math.max(1, rect.width);
       height = Math.max(1, rect.height);
       const aspect = width / height;
-      cameras.forEach((camera) => {
-        camera.aspect = aspect;
-        camera.updateProjectionMatrix();
+      worlds.forEach((world) => {
+        world.camera.aspect = aspect;
+        world.camera.updateProjectionMatrix();
+        world.resize?.(aspect);
       });
-      worlds.forEach((world) => world.resize?.(aspect));
       renderer?.setSize(width, height, false);
     };
 
@@ -170,12 +165,10 @@ export function SceneStage() {
         console.warn("Glass environment unavailable:", error);
       }
 
-      // Scene 4 is lit by the photo-studio HDRI instead of the neutral room.
+      // Scene 4 is lit by the studio HDRI instead of the neutral room.
       try {
-        const buffer = await loadBinaryAsset(
-          new URL("../assets/photo_studio_01_1k.hdr.b64", import.meta.url),
-        );
-        const hdrTexture = new HDRLoader().createDataTexture(buffer);
+        // Relative so the HDR resolves under the virtual preview's URL prefix.
+        const hdrTexture = await new HDRLoader().loadAsync("studio.hdr");
         hdrTexture.mapping = THREE.EquirectangularReflectionMapping;
         const pmrem = new THREE.PMREMGenerator(renderer);
         hdrTarget = pmrem.fromEquirectangular(hdrTexture);
@@ -234,25 +227,6 @@ export function SceneStage() {
           if (involved) {
             world.update(time, pointer, phase);
           }
-
-          const camera = cameras[index];
-          const lift =
-            phase.phase === "enter"
-              ? 1 - phase.progress
-              : phase.phase === "exit"
-                ? phase.progress
-                : 0;
-
-          const configuredDistance = world.cameraDistance;
-          const distance =
-            typeof configuredDistance === "function"
-              ? configuredDistance(camera.aspect)
-              : (configuredDistance ?? 9.6);
-          camera.position.x = pointer.x * 0.45;
-          camera.position.y = -pointer.y * 0.32;
-          camera.position.z =
-            distance + Math.sin(time * 0.24 + index) * 0.12 + lift * 0.9;
-          camera.lookAt(0, 0, 0);
         }
 
         pipeline!.update(

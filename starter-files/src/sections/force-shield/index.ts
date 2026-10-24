@@ -29,7 +29,12 @@ import {
   vec2,
   vec3,
 } from "three/tsl";
-import { glowPlane, type ChapterWorld } from "../shared.ts";
+import {
+  createChapterCamera,
+  frameChapterCamera,
+  glowPlane,
+  type ChapterWorld,
+} from "../shared.ts";
 
 /* ── 01 Force Shield: TSL port of the flow-shield demo ───────────────────── */
 
@@ -468,8 +473,11 @@ export function buildForceShield(accent: string): ChapterWorld {
     ring.mesh.visible = true;
   };
 
+  const camera = createChapterCamera(1);
+
   return {
     group,
+    camera,
     onPointerDown(point) {
       const localPoint = shield.worldToLocal(point.clone());
       if (localPoint.length() > SHIELD_RADIUS * 1.08) return;
@@ -528,6 +536,8 @@ export function buildForceShield(accent: string): ChapterWorld {
       group.rotation.y = pointer.x * 0.24 + Math.sin(time * 0.1) * 0.08;
       group.rotation.x = pointer.y * 0.1;
       group.position.z = Math.sin(time * 0.32) * 0.08;
+
+      frameChapterCamera(camera, 1, time, pointer, phase);
     },
   };
 }

@@ -12,6 +12,8 @@ import {
 } from "three/tsl";
 import {
   addRing,
+  createChapterCamera,
+  frameChapterCamera,
   glowPlane,
   type ChapterWorld,
 } from "../shared.ts";
@@ -96,9 +98,12 @@ export function buildAlpha(accent: string): ChapterWorld {
   glow.position.z = -3;
   group.add(glow);
 
+  const camera = createChapterCamera(5);
+
   return {
     group,
-    update(time, pointer) {
+    camera,
+    update(time, pointer, phase) {
       group.rotation.y = time * 0.045 + pointer.x * 0.16;
       group.rotation.x = pointer.y * 0.08;
       shards.forEach(({ mesh, spin }, index) => {
@@ -110,6 +115,8 @@ export function buildAlpha(accent: string): ChapterWorld {
       rings.forEach(({ ring }, index) => {
         ring.rotation.z += 0.0008 + index * 0.0004;
       });
+
+      frameChapterCamera(camera, 5, time, pointer, phase);
     },
   };
 }

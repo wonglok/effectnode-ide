@@ -1,9 +1,10 @@
 # MY COMPANY — starter
 
 A six-chapter, scroll-driven landing page that runs entirely inside the Forge
-preview. No video and no image assets: the scenes are real-time three.js
-WebGPURenderer worlds shaded with TSL, the story is steered by a small Zustand
-store, and React Router's `HashRouter` keeps the URL in step with the chapter.
+preview. The scenes are real-time three.js WebGPURenderer worlds shaded with
+TSL (chapter 4 adds a scanned apartment GLB and a studio HDRI), the story is
+steered by a small Zustand store, and React Router's `HashRouter` keeps the URL
+in step with the chapter.
 
 `three` (runtime) and `@types/three` (types) are installed and mapped through
 the import map, so `three`, `three/webgpu`, `three/tsl`, and
@@ -21,8 +22,8 @@ to a static CSS stage instead of falling back to Canvas 2D.
 - **03 Kinetic** — a field of orbiting particles and a multiline
   “Welcome to my template” title drawn with `TextGeometry` in transmission
   glass.
-- **04 Apartment** — a scanned interior lit by a photo-studio HDRI, with a
-  Draco-compressed GLB and AVIF textures.
+- **04 Apartment** — a scanned interior lit by a studio HDRI, with a
+  Draco-compressed GLB and AVIF textures. The camera sits inside the room.
 - **05 Live Env** — a wireframe skyline, receding grid, and floating monoliths.
 - **06 Alpha 6** — glass shards built from gradients and geometry.
 
@@ -50,17 +51,20 @@ the active chapter (`#/scene-02`), and reloading resumes at that chapter.
     flow noise, reveal dissolve, and impact rings.
   - `src/sections/kinetic/index.ts` — instanced glints plus the glass title.
   - `src/sections/apartment/index.ts` — scanned apartment GLB (Draco + AVIF),
-    normalized into the frame and lit by the photo-studio HDRI.
+    normalized into the frame, lit by the studio HDRI, and viewed from an
+    interior camera at ground level.
   - `src/sections/live-env/index.ts` — wireframe city over a breathing grid.
   - `src/sections/alpha6/index.ts` — fresnel-lit glass shards.
-  Each world has its own scene, camera, and render pass; the scroll phase drifts
+  Each world owns its scene, camera instance, and render pass (the camera is
+  created and framed in the chapter module); the scroll phase drifts
   and scales the world as it enters or leaves. The kinetic title uses
   `MeshPhysicalNodeMaterial` transmission, dispersion and clearcoat with a
-  prefiltered room environment. Chapter 4 prefilters the photo-studio HDRI with
+  prefiltered room environment. Chapter 4 prefilters `public/studio.hdr` with
   `PMREMGenerator` and assigns it as that scene's environment.
-- `src/lib/assets.ts` — fetches and decodes the base64 binary starter assets.
-- `src/assets/photo_studio_01_1k.hdr.b64` — the chapter 4 environment map.
-- `src/assets/apartment.glb.b64` — the chapter 4 apartment model.
+- `public/studio.hdr` — the chapter 4 environment map.
+- `public/apartment.glb` — the chapter 4 apartment model (Draco + AVIF).
+  Both are requested with relative URLs (`studio.hdr`, `apartment.glb`) so they
+  resolve at the site root and under the IDE preview's virtual-server prefix.
 - `src/sections/shared.ts` — shared scene types and TSL helpers (glow plane,
   orbit rings).
 - `src/sections/kinetic/helvetica.ts` — the Helvetiker outline bundled for

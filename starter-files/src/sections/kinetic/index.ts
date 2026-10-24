@@ -2,6 +2,8 @@ import * as THREE from "three/webgpu";
 import { color as tslColor } from "three/tsl";
 import {
   addRing,
+  createChapterCamera,
+  frameChapterCamera,
   glowPlane,
   type ChapterWorld,
 } from "../shared.ts";
@@ -66,9 +68,11 @@ export function buildKinetic(accent: string): ChapterWorld {
   group.add(centerText.mount);
 
   const dummy = new THREE.Object3D();
+  const camera = createChapterCamera(2);
 
   return {
     group,
+    camera,
     resize(aspect) {
       centerText.fitToView(aspect);
     },
@@ -104,6 +108,8 @@ export function buildKinetic(accent: string): ChapterWorld {
       centerText.mount.rotation.y =
         Math.sin(time * 0.18) * 0.025 + pointer.x * 0.04;
       centerText.mount.scale.setScalar(1 + leaving * 0.18);
+
+      frameChapterCamera(camera, 2, time, pointer, phase);
     },
   };
 }

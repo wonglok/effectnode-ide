@@ -8,7 +8,12 @@ import {
   uv,
   vec2,
 } from "three/tsl";
-import { glowPlane, type ChapterWorld } from "../shared.ts";
+import {
+  createChapterCamera,
+  frameChapterCamera,
+  glowPlane,
+  type ChapterWorld,
+} from "../shared.ts";
 
 /* ── 01 Soft Room: a sunlit interior with soft window shadows ─────────────
  * TSL translation of the room-with-soft-shadows demo: a shoji window casts a
@@ -422,9 +427,12 @@ export function buildSoftRoom(accent: string): ChapterWorld {
   let sunYaw = 0;
   let sunPitch = 0;
 
+  const camera = createChapterCamera(0);
+
   return {
     group,
-    update(time, pointer) {
+    camera,
+    update(time, pointer, phase) {
       const delta = Math.min(0.05, Math.max(0, time - previousTime));
       previousTime = time;
 
@@ -447,6 +455,8 @@ export function buildSoftRoom(accent: string): ChapterWorld {
       group.rotation.y = pointer.x * 0.022;
       group.rotation.x = pointer.y * 0.012;
       group.position.z = Math.sin(time * 0.22) * 0.03;
+
+      frameChapterCamera(camera, 0, time, pointer, phase);
     },
   };
 }

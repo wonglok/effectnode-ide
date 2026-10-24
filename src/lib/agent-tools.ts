@@ -237,7 +237,9 @@ async function* searchableFiles(): AsyncGenerator<[string, string]> {
   if (!vfs) return;
 
   // Read files one at a time instead of snapshotting every file up front.
-  const paths = flattenLeaves(buildFileTree(vfs))
+  const paths = flattenLeaves(
+    buildFileTree(vfs, (path) => runtime.isServedAsset(path))
+  )
     .map((node) => node.path)
     .sort((a, b) => a.localeCompare(b));
 
@@ -631,7 +633,8 @@ export function describeToolCall(call: AgentToolCall): ToolCallPreview {
 export function buildAgentSystemPrompt(): string {
   const vfs = runtime.getVfs();
   const files = vfs
-    ? flattenLeaves(buildFileTree(vfs)).map((node) => node.path)
+    ? flattenLeaves(buildFileTree(vfs, (path) => runtime.isServedAsset(path)))
+        .map((node) => node.path)
     : [];
   const shown = files.slice(0, 200);
   const more =

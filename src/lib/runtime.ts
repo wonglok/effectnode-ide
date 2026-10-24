@@ -56,6 +56,8 @@ export class IdeRuntime {
   private logSequence = 0;
   private previewUrlValue = '';
   private fileSink: FileSink | null = null;
+  /** Binary public assets served to the project but hidden from its file map. */
+  private servedAssetPaths = new Set<string>();
 
   /** Attach the durable project store (OPFS) or detach it with `null`. */
   setFileSink(sink: FileSink | null): void {
@@ -99,7 +101,15 @@ export class IdeRuntime {
     return Object.keys(this.snapshot()).length;
   }
 
-  async boot(files: Record<string, string>): Promise<void> {
+  /** True for binary starter assets that should not appear in the file map. */
+  isServedAsset(path: string): boolean {
+    return this.servedAssetPaths.has(path);
+  }
+
+  async boot(
+    files: Record<string, string>,
+    assets: Record<string, Uint8Array> = {}
+  ): Promise<void> {
     if (this.status === 'ready') return;
     if (this.bootPromise) return this.bootPromise;
 
@@ -111,7 +121,7 @@ export class IdeRuntime {
 
         // Mount the project first so the editor remains usable even if the
         // browser refuses to register a service worker.
-        this.mount(files);
+        this.mount(files, assets);
 
         this.bridge = this.lib.getServerBridge();
 
@@ -142,13 +152,24 @@ export class IdeRuntime {
     return bootPromise;
   }
 
-  private mount(files: Record<string, string>): void {
+  private mount(
+    files: Record<string, string>,
+    assets: Record<string, Uint8Array> = {}
+  ): void {
     if (!this.lib) throw new Error('almostnode is not loaded');
     const vfs = new this.lib.VirtualFS();
     for (const [path, content] of Object.entries(files)) {
       const parent = dirname(path);
       if (parent !== '/') vfs.mkdirSync(parent, { recursive: true });
       vfs.writeFileSync(path, content);
+    }
+    // Public binaries are served by the virtual dev server but kept out of the
+    // editable file map, exports, and the agent's view of the project.
+    this.servedAssetPaths = new Set(Object.keys(assets));
+    for (const [path, data] of Object.entries(assets)) {
+      const parent = dirname(path);
+      if (parent !== '/') vfs.mkdirSync(parent, { recursive: true });
+      vfs.writeFileSync(path, data);
     }
     this.vfs = vfs;
   }
@@ -217,16 +238,19 @@ export class IdeRuntime {
   }
 
   /** Replace the whole virtual project and restart the preview server. */
-  async replaceProject(files: Record<string, string>): Promise<void> {
+  async replaceProject(
+    files: Record<string, string>,
+    assets: Record<string, Uint8Array> = {}
+  ): Promise<void> {
     if (!this.lib || this.status !== 'ready') {
-      await this.boot(files);
+      await this.boot(files, assets);
       void this.fileSink?.replaceAll(files);
       return;
     }
 
     this.log('info', 'Swapping virtual project…');
     this.teardownServer();
-    this.mount(files);
+    this.mount(files, assets);
     this.startServer();
     this.emit({ type: 'restarted', url: this.previewUrlValue });
     this.log('success', 'Preview server restarted with new files');
@@ -256,6 +280,7 @@ export class IdeRuntime {
   }
 
   readFile(path: string): string | null {
+    if (this.servedAssetPaths.has(path)) return null;
     try {
       return this.requireVfs().readFileSync(path, 'utf8');
     } catch {
@@ -286,7 +311,13 @@ export class IdeRuntime {
 
   listDir(path: string): string[] {
     try {
-      return this.requireVfs().readdirSync(path).filter((name) => !IGNORED.has(name));
+      return this.requireVfs()
+        .readdirSync(path)
+        .filter(
+          (name) =>
+            !IGNORED.has(name) &&
+            !this.servedAssetPaths.has(joinPath(path, name))
+        );
     } catch {
       return [];
     }
@@ -345,6 +376,7 @@ export class IdeRuntime {
       for (const name of entries) {
         if (IGNORED.has(name)) continue;
         const path = joinPath(dir, name);
+        if (this.servedAssetPaths.has(path)) continue;
         try {
           const stats = this.vfs!.statSync(path);
           if (stats.isDirectory()) visit(path);
