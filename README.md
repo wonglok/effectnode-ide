@@ -112,6 +112,9 @@ automatically during `npm run build`).
 - **Ask the agent to change the project.** The Agent workbench reads, writes and
   replaces files in the same VFS, runs shell commands, and streams its answer
   into the chat while the preview hot-reloads (see below).
+- **Deploy from the cloud button** in the activity rail. The console mirrors the
+  workspace to GitHub (create, pull, push, sync) and stores Vercel, Cloudflare
+  Pages, and Netlify target settings (see below).
 
 Keyboard shortcuts: `⌘S` save project · `⌘B` explorer · `⌘J` panel ·
 `⌘K` projects · `⌘⇧A` focus agent chat · `Esc` close dialog · `↑/↓` shell history.
@@ -180,6 +183,26 @@ These can also be set in `.env` (see `.env.example`); Nitro loads it in dev and
 - The model never touches the filesystem directly — it can only call the five
   tools above against the in-memory VFS.
 
+## Deploy console
+
+The cloud button in the activity rail opens a two-pane console. The left menu
+lists hosting targets and GitHub actions; the right pane holds the form,
+activity log, and close control.
+
+- **Vercel deploy**, **Cloudflare deploy**, **Netlify deploy** — store the target
+  configuration (project/site/account IDs) in the browser. Direct upload is not
+  wired yet: those panels show an **adapter pending** state instead of pretending
+  a deploy happened.
+- **GitHub → Create repo / Pull / Push / Sync** — fully wired against
+  `api.github.com` from the tab. Create makes a repository under the token's
+  account. Push mirrors the whole workspace into one commit using the Git Data
+  API, so deleted files disappear remotely too. Pull replaces the workspace with
+  the branch's text files. Sync runs pull, then pushes that snapshot back.
+  Binary files are skipped on pull because the VFS is text-only.
+- Tokens are kept in `sessionStorage` for the current tab only, sent directly to
+  GitHub, and never written to the project, an archive, or the Nitro server.
+  Token fields are password inputs with an explicit reveal toggle.
+
 ## How the almostnode integration works
 
 The implementation follows the pattern used by almostnode's agent workbench demo:
@@ -208,7 +231,7 @@ tree, tabs, buffers, logs, project metadata, and layout.
 ├── vite.config.ts          # React + Nitro + almostnode SW middleware
 ├── src/
 │   ├── App.tsx             # IDE shell and split layout
-│   ├── components/         # title bar, explorer, editor, preview, terminal…
+│   ├── components/         # title bar, explorer, editor, preview, deploy console…
 │   │   └── agent/          # AgentPanel, setup dialog, markdown renderer
 │   ├── lib/
 │   │   ├── runtime.ts      # VirtualFS + ViteDevServer + service worker
@@ -218,8 +241,9 @@ tree, tabs, buffers, logs, project metadata, and layout.
 │   │   ├── agent-client.ts # SSE streaming client for /api/agent
 │   │   ├── agent-config.ts # provider presets + storage
 │   │   ├── agent-tools.ts  # tool schemas + VFS/bash execution
+│   │   ├── github.ts       # GitHub REST client for the deploy console
 │   │   └── api.ts          # Nitro client
-│   └── store/              # runtime · workspace · projects · ui · agent (Zustand)
+│   └── store/              # runtime · workspace · projects · ui · agent · deploy (Zustand)
 ├── server/
 │   ├── routes/api/         # Nitro routes (/api/health, /api/projects, /api/agent, /api/auth)
 │   └── utils/              # password gate + project validation/storage

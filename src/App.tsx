@@ -6,6 +6,7 @@ import {
   ProjectsDialog,
   ShortcutsDialog,
 } from '@/components/Dialogs';
+import { DeployDialog } from '@/components/DeployDialog';
 import { EditorPane } from '@/components/EditorPane';
 import { FileExplorer } from '@/components/FileExplorer';
 import { RightDock } from '@/components/RightDock';
@@ -192,6 +193,7 @@ export default function App() {
       <PromptDialog />
       <ConfirmDialog />
       <ProjectsDialog />
+      <DeployDialog />
       <ShortcutsDialog />
       <AgentSetupDialog />
       <Toasts />
