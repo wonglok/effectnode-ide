@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { HarnessStatus } from '../../shared/types';
+import type { HarnessStatus, HarnessTodoItem } from '../../shared/types';
 import { fetchAgentStatus } from '@/lib/agent-client';
 import { runHarnessTurn } from '@/lib/harness-client';
 import { playCompletionChime, primeCompletionAudio } from '@/lib/completion-chime';
@@ -34,6 +34,9 @@ export interface AgentState {
   runStatus: AgentRunStatus;
   runStatusText: string | null;
   messages: AgentMessage[];
+  /** Latest whole-list snapshot emitted by the harness `todo_write` tool. */
+  todos: HarnessTodoItem[];
+  todosFor: string | null;
   error: string | null;
   undoSnapshot: Record<string, string> | null;
   undoAvailable: boolean;
@@ -122,6 +125,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   runStatus: 'idle',
   runStatusText: null,
   messages: [],
+  todos: [],
+  todosFor: null,
   error: null,
   undoSnapshot: null,
   undoAvailable: false,
@@ -168,11 +173,15 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     const runId = ++runSequence;
     activeRun = { id: runId, controller };
 
+    const key = conversationKey();
+    const switchedConversation = state.todosFor !== key;
+
     const assistantDisplayId = makeId('assistant');
     set({
       runStatus: 'running',
       runStatusText: 'Syncing project…',
       error: null,
+      ...(switchedConversation ? { todos: [] as HarnessTodoItem[], todosFor: key } : {}),
       messages: [
         ...state.messages,
         { id: makeId('user'), role: 'user', content: text, at: Date.now() },
@@ -198,6 +207,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     };
 
     const addTool = (event: { id: string; name: string; summary: string; path?: string }) => {
+      // The plan is rendered in its own panel, not as a tool card.
+      if (event.name === 'todo_write') return;
       const displayId = makeId('tool');
       toolMessages.set(event.id, displayId);
       set((current) => ({
@@ -247,7 +258,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     try {
       const result = await runHarnessTurn({
         prompt: text,
-        conversationKey: conversationKey(),
+        conversationKey: key,
         files: snapshot,
         signal: controller.signal,
         onEvent: (event) => {
@@ -255,9 +266,12 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           if (event.type === 'status') {
             set({ runStatusText: event.message });
           } else if (event.type === 'tool') {
+            set({ runStatusText: event.summary });
             addTool(event);
           } else if (event.type === 'tool-done') {
             finishTool(event);
+          } else if (event.type === 'todo') {
+            set({ todos: event.todos, runStatusText: 'Updating the task plan…' });
           }
         },
       });
@@ -353,6 +367,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       runStatus: 'idle',
       runStatusText: null,
       messages: [],
+      todos: [],
+      todosFor: null,
       error: null,
       undoSnapshot: null,
       undoAvailable: false,

@@ -11,6 +11,8 @@ import { ReasoningEffortId } from '@deepseek-ai/dsh-llm';
 import type {
   HarnessStatus,
   HarnessStreamEvent,
+  HarnessTodoItem,
+  HarnessTodoStatus,
   HarnessTurnRequest,
   HarnessTurnResult,
 } from '../../shared/types';
@@ -46,6 +48,12 @@ const IGNORED_ENTRIES = new Set([
 ]);
 
 const BOOT_ID = randomUUID().replace(/-/g, '').slice(0, 12);
+/**
+ * Session ids are scoped to one spawned runtime. Closing the runtime (Stop) or
+ * letting it die leaves persisted session logs behind; reusing the same id in a
+ * new subprocess makes the session store reject it as "already exists".
+ */
+let runtimeTag = randomUUID().replace(/-/g, '').slice(0, 8);
 
 export class HarnessNotConfiguredError extends Error {
   constructor() {
@@ -127,6 +135,8 @@ function createHarness(): DeepSeekHarness {
   const config = harnessConfig();
   if (!config.apiKey) throw new HarnessNotConfiguredError();
 
+  runtimeTag = randomUUID().replace(/-/g, '').slice(0, 8);
+
   return new DeepSeekHarness({
     profile: 'sdk',
     ...(existsSync(AUTOMATION_PATCH) ? { patches: [AUTOMATION_PATCH] } : {}),
@@ -193,7 +203,7 @@ function workspaceDir(conversationKey: string): string {
 }
 
 function sessionId(conversationKey: string): string {
-  return `forge-${BOOT_ID}-${conversationKey}`;
+  return `forge-${BOOT_ID}-${runtimeTag}-${conversationKey}`;
 }
 
 /** Map an absolute virtual path (`/src/App.tsx`) to a safe relative path. */
@@ -369,19 +379,52 @@ function summarizeTool(
   }
 }
 
-function resultDetail(event: SessionEventNotification['event']): string | undefined {
+const TODO_STATUSES = new Set<HarnessTodoStatus>([
+  'pending',
+  'in_progress',
+  'completed',
+]);
+
+/** Validate the plugin-extended `todo/write` snapshot before it reaches the UI. */
+function parseTodos(raw: unknown): HarnessTodoItem[] | null {
+  if (!Array.isArray(raw)) return null;
+  const todos: HarnessTodoItem[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue;
+    const content = (entry as { content?: unknown }).content;
+    const status = (entry as { status?: unknown }).status;
+    if (typeof content !== 'string' || !content.trim()) continue;
+    if (typeof status !== 'string' || !TODO_STATUSES.has(status as HarnessTodoStatus)) {
+      continue;
+    }
+    todos.push({ content: content.trim(), status: status as HarnessTodoStatus });
+  }
+  return todos;
+}
+
+function resultDetail(
+  event: SessionEventNotification['event'],
+  workspace?: string
+): string | undefined {
   if (event.type !== 'tool/result') return undefined;
   const reason = event.data.error?.reason;
   if (reason) return truncate(reason, 180);
 
   const content = event.data.message.content;
   if (!Array.isArray(content)) return undefined;
-  const text = content
+  let text = content
     .flatMap((block) =>
       block.type === 'text' && typeof block.text === 'string' ? [block.text] : []
     )
     .join('\n')
     .trim();
+
+  // Tools often answer with an absolute path wrapped in <path> tags; show the
+  // project-relative path in the tool card instead.
+  if (workspace && text) {
+    text = text.split(`${workspace}${sep}`).join('/').split(workspace).join('');
+  }
+  text = text.replaceAll('<path>', '').replaceAll('</path>', '');
   return text ? truncate(text, 180) : undefined;
 }
 
@@ -408,12 +451,39 @@ export function runHarnessTurn(
   request: HarnessTurnRequest,
   handlers: HarnessTurnHandlers
 ): Promise<HarnessTurnResult> {
-  const task = turnQueue.then(() => executeTurn(request, handlers));
+  const task = turnQueue.then(() => executeWithRetry(request, handlers));
   turnQueue = task.then(
     () => undefined,
     () => undefined
   );
   return task;
+}
+
+/**
+ * A runtime can disappear between turns (crash, external kill, or an aborted
+ * turn). Those failures are not the user's prompt's fault: reset the runtime
+ * and try the turn once against a fresh subprocess and fresh session ids.
+ */
+async function executeWithRetry(
+  request: HarnessTurnRequest,
+  handlers: HarnessTurnHandlers
+): Promise<HarnessTurnResult> {
+  try {
+    return await executeTurn(request, handlers);
+  } catch (error) {
+    if (handlers.signal.aborted) throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    const recoverable =
+      /already exists/i.test(message) ||
+      /transport closed/i.test(message) ||
+      /runtime is gone/i.test(message) ||
+      /closed/i.test(message);
+    if (!recoverable) throw error;
+
+    await resetHarness();
+    if (handlers.signal.aborted) throw abortError();
+    return executeTurn(request, handlers);
+  }
 }
 
 async function executeTurn(
@@ -458,6 +528,15 @@ async function executeTurn(
         const event = params.event;
         if (!event) return;
 
+        // `todo_write` appends a plugin-extended `todo/write` snapshot on every
+        // whole-list update. Stream it directly so the UI can render the plan.
+        if ((event.type as string) === 'todo/write') {
+          const data = (event as unknown as { data?: { todos?: unknown } }).data;
+          const todos = parseTodos(data?.todos);
+          if (todos) onEvent({ type: 'todo', todos });
+          return;
+        }
+
         if (event.type === 'tool/call') {
           const callId = String(event.data.callId);
           const name = event.data.name;
@@ -473,12 +552,13 @@ async function executeTurn(
           const known = pending.get(callId);
           pending.delete(callId);
           const name = known?.name ?? 'tool';
+          const detail = resultDetail(event, workspace);
           onEvent({
             type: 'tool-done',
             id: callId,
             name,
             status: event.data.error || event.data.message.isError ? 'error' : 'ok',
-            ...(resultDetail(event) ? { detail: resultDetail(event) as string } : {}),
+            ...(detail ? { detail } : {}),
             ...(known?.path ? { path: known.path } : {}),
           });
         }

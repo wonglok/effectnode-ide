@@ -1,14 +1,17 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   ArrowUp,
   Check,
+  ChevronDown,
   CircleAlert,
-  ExternalLink,
   FileText,
   FolderOpen,
+  Image,
+  ListChecks,
   Loader2,
   Pencil,
   RefreshCw,
+  Search,
   Settings2,
   Sparkles,
   Square,
@@ -78,47 +81,215 @@ function RefreshBubble() {
   );
 }
 
-function toolIcon(name: string) {
-  if (name === "read_file") return <FileText size={13} />;
-  if (name === "write_file" || name === "replace_in_file")
-    return <Pencil size={13} />;
-  if (name === "list_files") return <FolderOpen size={13} />;
-  if (name === "run_bash") return <SquareTerminal size={13} />;
-  return <Sparkles size={13} />;
+type ToolKind = "read" | "write" | "shell" | "search" | "todo" | "other";
+
+function toolVisual(name: string): {
+  icon: ReactNode;
+  kind: ToolKind;
+  label: string;
+} {
+  if (name === "read" || name === "read_file") {
+    return { icon: <FileText size={13} />, kind: "read", label: "read" };
+  }
+  if (name === "read_image") {
+    return { icon: <Image size={13} />, kind: "read", label: "image" };
+  }
+  if (
+    name === "write" ||
+    name === "edit" ||
+    name === "write_file" ||
+    name === "replace_in_file" ||
+    name === "str_replace_editor"
+  ) {
+    return { icon: <Pencil size={13} />, kind: "write", label: name };
+  }
+  if (name === "bash" || name === "pwsh" || name === "run_bash") {
+    return { icon: <SquareTerminal size={13} />, kind: "shell", label: "bash" };
+  }
+  if (name === "grep" || name === "glob" || name === "list_files") {
+    return { icon: <Search size={13} />, kind: "search", label: name };
+  }
+  if (name === "todo_write") {
+    return { icon: <ListChecks size={13} />, kind: "todo", label: "plan" };
+  }
+  return { icon: <Sparkles size={13} />, kind: "other", label: name };
 }
 
 function ToolCard({ tool }: { tool: AgentToolEvent }) {
   const openFile = useWorkspaceStore((state) => state.openFile);
-  const canOpen =
-    Boolean(tool.path) &&
-    tool.name !== "list_files" &&
-    tool.status !== "running";
+  const [expanded, setExpanded] = useState(false);
+  const visual = toolVisual(tool.name);
+  const path = tool.path;
+  const detail = tool.detail ?? "";
+  const expandable = detail.length > 72;
 
   return (
-    <div className={`agent-tool is-${tool.status}`}>
-      <span className="agent-tool-icon">{toolIcon(tool.name)}</span>
+    <div className={`agent-tool is-${tool.status} agent-tool-kind-${visual.kind}`}>
+      <span className="agent-tool-icon">{visual.icon}</span>
       <div className="agent-tool-body">
-        <div className="agent-tool-summary">{tool.summary}</div>
-        {tool.detail ? (
-          <div className="agent-tool-detail">{tool.detail}</div>
+        <div className="agent-tool-headline">
+          <span className="agent-tool-name">{visual.label}</span>
+          <span className="agent-tool-summary">{tool.summary}</span>
+        </div>
+        {detail ? (
+          <div className={`agent-tool-detail ${expanded ? "is-expanded" : ""}`}>
+            {detail}
+          </div>
         ) : null}
       </div>
-      <span className="agent-tool-state">
-        {tool.status === "running" ? (
-          <Loader2 size={12} className="spin" />
+      <div className="agent-tool-actions">
+        {path && tool.status !== "running" ? (
+          <button
+            className="agent-tool-path"
+            title={`Open ${path}`}
+            onClick={() => openFile(path)}
+          >
+            <FolderOpen size={10} />
+            <span>{path.split("/").pop()}</span>
+          </button>
         ) : null}
-        {tool.status === "ok" ? <Check size={12} /> : null}
-        {tool.status === "error" ? <CircleAlert size={12} /> : null}
-      </span>
-      {canOpen ? (
-        <button
-          className="agent-tool-open"
-          title={`Open ${tool.path}`}
-          onClick={() => tool.path && openFile(tool.path)}
-        >
-          <ExternalLink size={11} />
-        </button>
+        {expandable ? (
+          <button
+            className={`agent-tool-expand ${expanded ? "is-open" : ""}`}
+            title={expanded ? "Collapse output" : "Expand output"}
+            onClick={() => setExpanded((value) => !value)}
+          >
+            <ChevronDown size={12} />
+          </button>
+        ) : null}
+        <span className="agent-tool-state">
+          {tool.status === "running" ? (
+            <Loader2 size={12} className="spin" />
+          ) : null}
+          {tool.status === "ok" ? <Check size={12} /> : null}
+          {tool.status === "error" ? <CircleAlert size={12} /> : null}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function TodoPanel() {
+  const todos = useAgentStore((state) => state.todos);
+  const running = useAgentStore((state) => state.runStatus === "running");
+  const [collapsed, setCollapsed] = useState(false);
+  const wasDone = useRef(false);
+
+  const completed = todos.filter((todo) => todo.status === "completed").length;
+  const active = todos.filter((todo) => todo.status === "in_progress").length;
+  const allDone = todos.length > 0 && completed === todos.length;
+  const percent = todos.length ? Math.round((completed / todos.length) * 100) : 0;
+
+  useEffect(() => {
+    // Fold away once everything is done, and reopen when a new plan starts.
+    if (allDone && !wasDone.current) setCollapsed(true);
+    if (!allDone && wasDone.current) setCollapsed(false);
+    wasDone.current = allDone;
+  }, [allDone]);
+
+  if (todos.length === 0) return null;
+
+  return (
+    <section
+      className={`agent-todos ${allDone ? "is-complete" : ""} ${
+        collapsed ? "is-collapsed" : ""
+      }`}
+      aria-label="Task plan"
+    >
+      <button
+        type="button"
+        className="agent-todos-head"
+        aria-expanded={!collapsed}
+        onClick={() => setCollapsed((value) => !value)}
+      >
+        <span className="agent-todos-mark">
+          <ListChecks size={13} />
+        </span>
+        <span className="agent-todos-title">
+          <strong>{allDone ? "All tasks complete" : "Task plan"}</strong>
+          <span>
+            {allDone
+              ? `${todos.length} of ${todos.length} done`
+              : active > 0
+                ? `${active} in progress`
+                : running
+                  ? "Working through the plan"
+                  : "Current plan"}
+          </span>
+        </span>
+        <span className="agent-todos-count">
+          {completed}
+          <em>/{todos.length}</em>
+        </span>
+        <ChevronDown
+          size={13}
+          className={`agent-todos-chevron ${collapsed ? "is-collapsed" : ""}`}
+        />
+      </button>
+      <div className="agent-todos-progress" aria-hidden="true">
+        <span style={{ width: `${percent}%` }} />
+      </div>
+      {!collapsed ? (
+        <ol className="agent-todos-list">
+          {todos.map((todo, index) => (
+            <li
+              key={`${index}-${todo.content}`}
+              className={`agent-todo is-${todo.status}`}
+            >
+              <span className="agent-todo-bullet">
+                {todo.status === "completed" ? <Check size={10} /> : null}
+                {todo.status === "in_progress" ? (
+                  <span className="agent-todo-pulse" />
+                ) : null}
+              </span>
+              <span className="agent-todo-text">{todo.content}</span>
+              {todo.status === "in_progress" ? (
+                <span className="agent-todo-tag">active</span>
+              ) : null}
+            </li>
+          ))}
+        </ol>
       ) : null}
+    </section>
+  );
+}
+
+function HarnessLoader({ label }: { label: string }) {
+  return (
+    <div className="agent-loader" role="status" aria-live="polite">
+      <svg
+        className="agent-loader-svg"
+        viewBox="0 0 32 32"
+        width="30"
+        height="30"
+        aria-hidden="true"
+      >
+        <defs>
+          <linearGradient
+            id="forge-loader-gradient"
+            x1="4"
+            y1="4"
+            x2="28"
+            y2="28"
+            gradientUnits="userSpaceOnUse"
+          >
+            <stop offset="0%" stopColor="#b7f34b" />
+            <stop offset="100%" stopColor="#6db6ff" />
+          </linearGradient>
+        </defs>
+        <circle className="agent-loader-track" cx="16" cy="16" r="11" />
+        <circle className="agent-loader-arc" cx="16" cy="16" r="11" />
+        <circle className="agent-loader-dot" cx="16" cy="5" r="2.2" />
+      </svg>
+      <span className="agent-loader-copy">
+        <strong>{label || "Working…"}</strong>
+        <span>DeepSeek Harness is running its tools</span>
+      </span>
+      <span className="agent-loader-bars" aria-hidden="true">
+        <i />
+        <i />
+        <i />
+      </span>
     </div>
   );
 }
@@ -385,6 +556,11 @@ export function AgentPanel() {
           </div>
         )}
         <div ref={endRef} />
+      </div>
+
+      <div className="agent-dock">
+        <TodoPanel />
+        {running ? <HarnessLoader label={runStatusText ?? ""} /> : null}
       </div>
 
       <div className={`agent-composer ${running ? "is-running" : ""}`}>

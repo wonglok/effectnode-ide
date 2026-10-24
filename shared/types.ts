@@ -113,6 +113,13 @@ export interface HarnessTurnResult {
   sessionId: string;
 }
 
+export type HarnessTodoStatus = 'pending' | 'in_progress' | 'completed';
+
+export interface HarnessTodoItem {
+  content: string;
+  status: HarnessTodoStatus;
+}
+
 /** One newline-delimited progress frame from POST /api/harness. */
 export type HarnessStreamEvent =
   | { type: 'status'; message: string }
@@ -125,6 +132,7 @@ export type HarnessStreamEvent =
       detail?: string;
       path?: string;
     }
+  | { type: 'todo'; todos: HarnessTodoItem[] }
   | ({ type: 'result' } & HarnessTurnResult)
   | { type: 'error'; message: string };
 

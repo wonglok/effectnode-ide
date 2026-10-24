@@ -142,6 +142,13 @@ The chat lives in its **own column beside the editor**: drag the divider between
 them to resize it, or press `⌘⇧A` to focus the composer. When a run finishes
 successfully, a three-note chime signals that the task is done.
 
+The chat UI renders the harness's own plan: `todo_write` snapshots feed a pinned
+task panel with live progress, per-item status, and auto-collapse on completion.
+Tool calls appear as colour-coded cards (read, write, shell, search) with status
+accents, file chips, expandable output, and a running scan line. While a turn is
+active, an animated SVG loader sits at the bottom of the chat column and reports
+the current harness step.
+
 The SDK has no mid-turn cancel. Pressing **Stop** closes the runtime subprocess
 (the documented way to abandon a turn); the next turn spawns a fresh one.
 Conversation history lives in that subprocess, so restarting the dev server
