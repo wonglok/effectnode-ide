@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 import { AuthGate } from './components/AuthGate';
 import './styles.css';
+import './tailwind.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

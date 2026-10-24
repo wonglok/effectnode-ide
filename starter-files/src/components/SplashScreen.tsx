@@ -47,7 +47,7 @@ export function SplashScreen() {
       <div className="ef-splash-inner">
         <div className="ef-splash-brand">
           <span className="ef-splash-mark" />
-          <span>Easy Fancy</span>
+          <span>MY COMPANY</span>
         </div>
 
         <div className="ef-splash-status">

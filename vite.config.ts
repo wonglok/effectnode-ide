@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
 import { almostnodePlugin } from 'almostnode/vite';
 import { nitro } from 'nitro/vite';
 import { defineConfig, type Plugin } from 'vite';
@@ -79,7 +80,14 @@ const crossOriginHeaders = {
 export default defineConfig({
   // almostnodePlugin must register its /__sw__.js middleware before Nitro's
   // catch-all SPA middleware, otherwise the worker route gets index.html.
-  plugins: [almostnodePlugin(), react(), nitro(), almostnodeServiceWorker(), almostnodeWorkerPatch()],
+  plugins: [
+    almostnodePlugin(),
+    react(),
+    tailwindcss(),
+    nitro(),
+    almostnodeServiceWorker(),
+    almostnodeWorkerPatch(),
+  ],
   resolve: {
     alias: {
       '@': path.resolve(root, 'src'),

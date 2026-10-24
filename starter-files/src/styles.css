@@ -5,9 +5,9 @@
   --ef-ink: #050605;
   /* Tiffany Blue primary */
   --ef-primary: #0abab5;
-  --ef-serif: 'Instrument Serif', Georgia, 'Times New Roman', serif;
-  --ef-sans: 'Space Grotesk', 'Helvetica Neue', Arial, sans-serif;
-  --ef-mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
+  --ef-serif: "Instrument Serif", Georgia, "Times New Roman", serif;
+  --ef-sans: "Space Grotesk", "Helvetica Neue", Arial, sans-serif;
+  --ef-mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
 }
 
 * {

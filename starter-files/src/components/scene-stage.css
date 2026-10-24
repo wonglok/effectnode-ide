@@ -16,13 +16,21 @@
   position: absolute;
   inset: 0;
   background:
-    radial-gradient(ellipse 60% 45% at 50% 42%, rgba(10, 186, 181, 0.09), transparent 70%),
-    radial-gradient(ellipse 70% 50% at 50% 72%, rgba(38, 174, 255, 0.08), transparent 72%),
+    radial-gradient(
+      ellipse 60% 45% at 50% 42%,
+      rgba(10, 186, 181, 0.09),
+      transparent 70%
+    ),
+    radial-gradient(
+      ellipse 70% 50% at 50% 72%,
+      rgba(38, 174, 255, 0.08),
+      transparent 72%
+    ),
     #030403;
 }
 
 .ef-stage-fallback::after {
-  content: '';
+  content: "";
   position: absolute;
   inset: 0;
   background-image:

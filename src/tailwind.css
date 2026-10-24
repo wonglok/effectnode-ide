@@ -1,0 +1,9 @@
+/*
+ * Tailwind CSS v4 utilities for the Forge IDE itself.
+ *
+ * The theme layer is available for utilities, but preflight is intentionally
+ * omitted so the existing chassis styles and resets remain the baseline.
+ * Utilities stay unlayered so they win over the IDE's unlayered globals.
+ */
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css";

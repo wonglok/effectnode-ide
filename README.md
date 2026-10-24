@@ -6,7 +6,7 @@ system provided by [almostnode]; a Vite-compatible dev server is mounted inside
 the page and served through a service worker. A Nitro backend persists project
 snapshots to disk.
 
-Built with **Vite 7 · Nitro 3 · TypeScript · React 19 · Zustand 5 · almostnode 0.2.14**.
+Built with **Vite 7 · Nitro 3 · TypeScript · React 19 · Zustand 5 · Tailwind CSS 4 · almostnode 0.2.14**.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
@@ -37,6 +37,10 @@ npm run dev        # Vite + Nitro on http://localhost:5173
 `npm run dev` starts one server: Vite serves the React shell and, through the
 Nitro Vite plugin, `/api/*` routes live in the same process. The almostnode
 service worker is served from `/__sw__.js`.
+
+Tailwind CSS v4 is wired through `@tailwindcss/vite` and loaded from
+`src/tailwind.css`. Preflight is intentionally omitted so the IDE's existing
+chassis reset and typography stay the baseline.
 
 ### Production
 
@@ -255,8 +259,8 @@ ZIP exports contain a root `forge.manifest.json` and a single project folder:
   "format": "forge-project",
   "version": 1,
   "appVersion": "0.1.0",
-  "projectName": "easy-fancy",
-  "root": "easy-fancy",
+  "projectName": "MY COMPANY",
+  "root": "my-company",
   "exportedAt": "2026-10-24T00:00:00.000Z",
   "fileCount": 19
 }

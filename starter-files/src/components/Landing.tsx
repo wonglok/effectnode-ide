@@ -63,10 +63,10 @@ function Header() {
       <button
         className="ef-brand"
         onClick={() => goTo(0)}
-        aria-label="Easy Fancy — back to the beginning"
+        aria-label="MY COMPANY — back to the beginning"
       >
         <span className="ef-brand-mark" />
-        <span>Easy Fancy</span>
+        <span>MY COMPANY</span>
       </button>
 
       <div className="ef-header-right">
@@ -176,7 +176,7 @@ export function Landing() {
         index?: unknown;
         from?: unknown;
       } | null;
-      if (!data || data.source !== "easy-fancy") return;
+      if (!data || data.source !== "my-company") return;
 
       if (data.type === "scroll-to-scene") {
         const index = Number(data.index);

@@ -48,6 +48,6 @@ async function run(): Promise<void> {
     runtime.log('info', `Restored “${restored.name}” from the Nitro server`);
   } else {
     useProjectStore.getState().setCurrent(null);
-    runtime.log('info', 'Loaded the Easy Fancy starter project');
+    runtime.log('info', 'Loaded the MY COMPANY starter project');
   }
 }

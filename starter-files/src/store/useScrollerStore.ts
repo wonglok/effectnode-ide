@@ -98,8 +98,8 @@ const createScrollEngine = (): ScrollEngine => ({
 const engine: ScrollEngine =
   typeof window === 'undefined'
     ? createScrollEngine()
-    : ((window as unknown as { __easyFancyScroll?: ScrollEngine })
-        .__easyFancyScroll ??= createScrollEngine());
+    : ((window as unknown as { __myCompanyScroll?: ScrollEngine })
+        .__myCompanyScroll ??= createScrollEngine());
 
 const SCROLL_FRICTION = 4;
 const WHEEL_INERTIA = 4;
@@ -353,8 +353,8 @@ type ScrollerStore = ReturnType<typeof createScrollerStore>;
 export const useScrollerStore: ScrollerStore =
   typeof window === 'undefined'
     ? createScrollerStore()
-    : ((window as unknown as { __easyFancyStore?: ScrollerStore })
-        .__easyFancyStore ??= createScrollerStore());
+    : ((window as unknown as { __myCompanyStore?: ScrollerStore })
+        .__myCompanyStore ??= createScrollerStore());
 
 /**
  * Turns wheel and touch gestures into virtual scroll. Native scrolling stays

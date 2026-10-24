@@ -4,8 +4,8 @@
  * build time with Vite's `?raw` imports, so they stay readable and editable
  * while the browser receives plain strings.
  *
- * The starter is a four-chapter, scroll-driven landing page inspired by the
- * Easy Fancy project: a Zustand scroll store, a chapter timeline, and one
+ * The starter is a four-chapter, scroll-driven landing page for MY COMPANY:
+ * a Zustand scroll store, a chapter timeline, and one
  * canvas that draws every scene. The in-browser ViteDevServer compiles the TSX
  * with esbuild-wasm and maps React/Zustand to esm.sh.
  */
@@ -34,7 +34,7 @@ import sceneStageCss from '../../starter-files/src/components/scene-stage.css?ra
 import splashTsx from '../../starter-files/src/components/SplashScreen.tsx?raw';
 import splashCss from '../../starter-files/src/components/splash.css?raw';
 
-export const STARTER_PROJECT_NAME = 'easy-fancy';
+export const STARTER_PROJECT_NAME = 'MY COMPANY';
 
 export const STARTER_FILES: Record<string, string> = {
   '/package.json': packageJson,

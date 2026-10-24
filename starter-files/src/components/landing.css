@@ -153,7 +153,7 @@
   color: var(--ef-paper);
 }
 
-.ef-sound[data-on='true'] {
+.ef-sound[data-on="true"] {
   border-color: rgba(10, 186, 181, 0.42);
   background: rgba(10, 186, 181, 0.1);
   color: var(--ef-primary);
@@ -247,7 +247,7 @@
   outline-offset: 2px;
 }
 
-.ef-hud-button[data-active='true'] {
+.ef-hud-button[data-active="true"] {
   color: #050605;
   border-color: var(--accent);
   background: var(--accent);
@@ -277,7 +277,7 @@
     transform 0.5s ease;
 }
 
-.ef-cue[data-hidden='true'] {
+.ef-cue[data-hidden="true"] {
   opacity: 0;
   transform: translate(-50%, 8px);
 }

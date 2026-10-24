@@ -4,8 +4,12 @@
   z-index: 100;
   display: grid;
   place-items: center;
-  background:
-    radial-gradient(120% 90% at 50% 0%, #101a0b 0%, #060806 46%, #030403 100%);
+  background: radial-gradient(
+    120% 90% at 50% 0%,
+    #101a0b 0%,
+    #060806 46%,
+    #030403 100%
+  );
   color: var(--ef-paper);
   opacity: 1;
   transition:
@@ -13,7 +17,7 @@
     visibility 0.72s;
 }
 
-.ef-splash[data-done='true'] {
+.ef-splash[data-done="true"] {
   opacity: 0;
   visibility: hidden;
   pointer-events: none;

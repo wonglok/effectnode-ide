@@ -1,4 +1,4 @@
-# Easy Fancy — starter
+# MY COMPANY — starter
 
 A four-chapter, scroll-driven landing page that runs entirely inside the Forge
 preview. No video and no image assets: the scenes are real-time three.js
