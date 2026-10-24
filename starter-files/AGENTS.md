@@ -88,4 +88,6 @@ and external coding agents should follow these rules when changing the project.
 
 # Three.js Content
 
-if user provided any glsl code or webgl code or webgl 2.0 code or threeJS WebGLRenderer code please translate to ThreeJS WebGPURenderer Code with TSL (threejs shader language) for the current project's threejs to use.
+- if user provided any glsl code or webgl code or webgl 2.0 code or threeJS WebGLRenderer code please translate to ThreeJS WebGPURenderer Code with TSL (threejs shader language) for the current project's threejs to use.
+
+- please read node_modules/three for implementation details about tsl
