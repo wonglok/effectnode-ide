@@ -217,7 +217,41 @@ function listFilesTool(args: Record<string, unknown>): AgentToolOutcome {
   };
 }
 
-function searchTool(args: Record<string, unknown>): AgentToolOutcome {
+let yieldChannel: MessageChannel | null = null;
+
+/** Yield a macrotask so timers and rendering can run during a long search. */
+function yieldToUi(): Promise<void> {
+  if (typeof MessageChannel === "undefined") {
+    return new Promise<void>((resolve) => setTimeout(resolve, 0));
+  }
+  yieldChannel ??= new MessageChannel();
+  const channel = yieldChannel;
+  return new Promise<void>((resolve) => {
+    channel.port1.onmessage = () => resolve();
+    channel.port2.postMessage(null);
+  });
+}
+
+async function* searchableFiles(): AsyncGenerator<[string, string]> {
+  const vfs = runtime.getVfs();
+  if (!vfs) return;
+
+  // Read files one at a time instead of snapshotting every file up front.
+  const paths = flattenLeaves(buildFileTree(vfs))
+    .map((node) => node.path)
+    .sort((a, b) => a.localeCompare(b));
+
+  await yieldToUi();
+  for (const path of paths) {
+    const content = runtime.readFile(path);
+    if (content !== null) yield [path, content];
+    await yieldToUi();
+  }
+}
+
+async function searchTool(
+  args: Record<string, unknown>,
+): Promise<AgentToolOutcome> {
   const rawQuery = typeof args.query === "string" ? args.query.trim() : "";
   if (!rawQuery) {
     return fail("Search failed", "query must be a non-empty string");
@@ -236,9 +270,9 @@ function searchTool(args: Record<string, unknown>): AgentToolOutcome {
       ? Math.max(1, Math.min(MAX_SEARCH_RESULTS, Math.floor(requested)))
       : DEFAULT_SEARCH_RESULTS;
 
-  const files = Object.entries(runtime.snapshot()).sort(([a], [b]) =>
-    a.localeCompare(b),
-  );
+  // Give the running tool card a frame to render before reading files.
+  await yieldToUi();
+
   const matches: string[] = [];
   const matchedFiles = new Set<string>();
   let outputChars = 0;
@@ -246,7 +280,7 @@ function searchTool(args: Record<string, unknown>): AgentToolOutcome {
   let skippedLarge = 0;
   let searchedFiles = 0;
 
-  scan: for (const [file, content] of files) {
+  scan: for await (const [file, content] of searchableFiles()) {
     if (content.length > MAX_SEARCH_FILE_CHARS) {
       skippedLarge += 1;
       continue;
@@ -255,6 +289,8 @@ function searchTool(args: Record<string, unknown>): AgentToolOutcome {
     searchedFiles += 1;
     const lines = content.split("\n");
     for (let index = 0; index < lines.length; index += 1) {
+      if (index > 0 && index % 400 === 0) await yieldToUi();
+
       const line = lines[index];
       if (!line.toLowerCase().includes(needle)) continue;
 
