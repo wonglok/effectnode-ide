@@ -2633,6 +2633,38 @@ code {
   color: var(--muted);
 }
 
+.agent-limit-copy .agent-limit-countdown {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.02em;
+  color: var(--accent-dim);
+}
+
+.agent-limit-cancel {
+  flex: 0 0 auto;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  transition: color 120ms ease, border-color 120ms ease;
+}
+
+.agent-limit-cancel:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--accent-line);
+}
+
+.agent-limit-cancel:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
 .agent-limit-button {
   flex: 0 0 auto;
   display: inline-flex;

@@ -472,6 +472,10 @@ export function AgentPanel() {
   const cancelEmptyResponseRetry = useAgentStore(
     (state) => state.cancelEmptyResponseRetry
   );
+  const limitCountdown = useAgentStore((state) => state.limitCountdown);
+  const cancelLimitCountdown = useAgentStore(
+    (state) => state.cancelLimitCountdown
+  );
   const undoAvailable = useAgentStore((state) => state.undoAvailable);
   const statusLoaded = useAgentStore((state) => state.statusLoaded);
   const status = useAgentStore((state) => state.status);
@@ -785,6 +789,11 @@ export function AgentPanel() {
                 );
               }
               if (message.role === "limit") {
+                const countdown =
+                  limitCountdown?.messageId === message.id
+                    ? limitCountdown
+                    : null;
+                const counting = countdown?.status === "countdown";
                 return (
                   <div key={message.id} className="agent-limit">
                     <span className="agent-limit-icon">
@@ -797,7 +806,31 @@ export function AgentPanel() {
                         {message.steps === 1 ? "step" : "steps"} and may still
                         have work left.
                       </span>
+                      {counting ? (
+                        <span className="agent-limit-countdown">
+                          Continuing automatically in {countdown.secondsLeft}s…
+                        </span>
+                      ) : countdown?.status === "cancelled" ? (
+                        <span className="agent-limit-countdown">
+                          Automatic continue cancelled.
+                        </span>
+                      ) : null}
                     </div>
+                    {counting || countdown?.status === "cancelled" ? (
+                      <button
+                        type="button"
+                        className="agent-limit-cancel"
+                        onClick={cancelLimitCountdown}
+                        disabled={!counting}
+                        title={
+                          counting
+                            ? "Cancel the automatic continue"
+                            : undefined
+                        }
+                      >
+                        {counting ? "Cancel" : "Cancelled"}
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       className="agent-limit-button"

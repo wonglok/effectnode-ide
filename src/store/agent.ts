@@ -36,6 +36,7 @@ const MAX_HISTORY_MESSAGES = 40;
 const ENGINE_STORAGE_KEY = "forge.agent.engine";
 const EMPTY_RETRY_SECONDS = 3;
 const EMPTY_RETRY_PROMPT = "keep going";
+const LIMIT_CONTINUE_SECONDS = 3;
 
 /** Pi is the default frontend harness; Claude and DeepSeek stay available as
  * alternate transports, and an explicit prior choice is preserved. */
@@ -98,6 +99,13 @@ export interface AgentEmptyResponseRetry {
   status: "countdown" | "sent" | "cancelled";
 }
 
+/** Transient countdown that auto-resumes after the step limit card appears. */
+export interface AgentLimitCountdown {
+  messageId: string;
+  secondsLeft: number;
+  status: "countdown" | "sent" | "cancelled";
+}
+
 export interface AgentState {
   /** DeepSeek proxy status reported by the Nitro server. */
   status: AgentStatusResponse | null;
@@ -116,6 +124,8 @@ export interface AgentState {
   error: string | null;
   /** Auto-retry prompt scheduled after the model answers with nothing. */
   emptyResponseRetry: AgentEmptyResponseRetry | null;
+  /** Auto continue scheduled after the step limit is reached. */
+  limitCountdown: AgentLimitCountdown | null;
   undoSnapshot: Record<string, string> | null;
   undoAvailable: boolean;
 
@@ -131,6 +141,8 @@ export interface AgentState {
   clearQueue: () => void;
   /** Stop the pending 3-second retry without sending anything. */
   cancelEmptyResponseRetry: () => void;
+  /** Stop the pending 3-second automatic continue after a step limit. */
+  cancelLimitCountdown: () => void;
   stop: () => void;
   clear: () => void;
   restoreLastRun: () => Promise<void>;
@@ -329,6 +341,87 @@ export const useAgentStore = create<AgentState>((set, get) => {
     clearEmptyRetryTimer();
     set({
       emptyResponseRetry: { ...current, secondsLeft: 0, status: "cancelled" },
+    });
+  };
+
+  let limitCountdownTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const clearLimitCountdownTimer = () => {
+    if (limitCountdownTimer === null) return;
+    clearTimeout(limitCountdownTimer);
+    limitCountdownTimer = null;
+  };
+
+  /** Drop the countdown, e.g. when a new run starts or the project resets. */
+  const clearLimitCountdown = () => {
+    clearLimitCountdownTimer();
+    if (get().limitCountdown) set({ limitCountdown: null });
+  };
+
+  const sendLimitContinue = () => {
+    const current = get().limitCountdown;
+    if (!current || current.status !== "countdown") return;
+    clearLimitCountdownTimer();
+
+    if (!isConfigured(get())) {
+      set({
+        limitCountdown: { ...current, secondsLeft: 0, status: "cancelled" },
+        setupOpen: true,
+      });
+      return;
+    }
+
+    set({
+      limitCountdown: { ...current, secondsLeft: 0, status: "sent" },
+    });
+    void get().keepGoing();
+  };
+
+  /** Auto-click Keep going three seconds after the limit card appears. */
+  const scheduleLimitContinue = (messageId: string) => {
+    clearLimitCountdownTimer();
+    set({
+      limitCountdown: {
+        messageId,
+        secondsLeft: LIMIT_CONTINUE_SECONDS,
+        status: "countdown",
+      },
+    });
+
+    const tick = () => {
+      const current = get().limitCountdown;
+      if (
+        !current ||
+        current.messageId !== messageId ||
+        current.status !== "countdown"
+      ) {
+        clearLimitCountdownTimer();
+        return;
+      }
+
+      if (current.secondsLeft <= 1) {
+        sendLimitContinue();
+        return;
+      }
+
+      set({
+        limitCountdown: {
+          ...current,
+          secondsLeft: current.secondsLeft - 1,
+        },
+      });
+      limitCountdownTimer = setTimeout(tick, 1000);
+    };
+
+    limitCountdownTimer = setTimeout(tick, 1000);
+  };
+
+  const cancelLimitCountdown = () => {
+    const current = get().limitCountdown;
+    if (!current || current.status !== "countdown") return;
+    clearLimitCountdownTimer();
+    set({
+      limitCountdown: { ...current, secondsLeft: 0, status: "cancelled" },
     });
   };
 
@@ -548,13 +641,14 @@ export const useAgentStore = create<AgentState>((set, get) => {
         if (controller.signal.aborted) break;
 
         if (step === MAX_STEPS - 1) {
+          const limitId = makeId("limit");
           set((current) => ({
             runStatus: "idle",
             runStatusText: null,
             messages: [
               ...finalizeStreaming(current.messages),
               {
-                id: makeId("limit"),
+                id: limitId,
                 role: "limit",
                 steps: MAX_STEPS,
                 at: Date.now(),
@@ -562,6 +656,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
             ],
             ...undoPatch(),
           }));
+          scheduleLimitContinue(limitId);
           runtime.log("warn", `Agent stopped at the ${MAX_STEPS}-step limit`);
           return "limit";
         }
@@ -860,15 +955,17 @@ export const useAgentStore = create<AgentState>((set, get) => {
       set({ history: nextHistory });
 
       if (session.hitLimit) {
+        const limitId = makeId("limit");
         set((current) => ({
           runStatus: "idle",
           runStatusText: null,
           messages: [
             ...finalizeStreaming(current.messages),
-            { id: makeId("limit"), role: "limit", steps: MAX_STEPS, at: Date.now() },
+            { id: limitId, role: "limit", steps: MAX_STEPS, at: Date.now() },
           ],
           ...undoPatch(),
         }));
+        scheduleLimitContinue(limitId);
         runtime.log("warn", `Agent stopped at the ${MAX_STEPS}-step limit`);
         return "limit";
       }
@@ -947,6 +1044,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
   /** Start one prompt. Callers must ensure the loop is idle. */
   const startPrompt = async (text: string): Promise<RunOutcome> => {
     const state = get();
+    clearLimitCountdown();
 
     // `send` runs from the composer's submit gesture; unlock audio now so the
     // completion chime is allowed when the model finishes some time later.
@@ -1014,6 +1112,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
     queue: [],
     error: null,
     emptyResponseRetry: null,
+    limitCountdown: null,
     undoSnapshot: null,
     undoAvailable: false,
 
@@ -1072,6 +1171,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
       const state = get();
       if (state.runStatus === "running" || state.history.length === 0) return;
 
+      clearLimitCountdown();
       primeCompletionAudio();
 
       const snapshot = state.undoSnapshot ?? runtime.snapshot();
@@ -1110,6 +1210,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
     clearQueue: () => set({ queue: [] }),
 
     cancelEmptyResponseRetry,
+    cancelLimitCountdown,
 
     stop: () => {
       activeRun?.controller.abort();
@@ -1120,6 +1221,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
       activeRun = null;
       runSequence += 1;
       clearEmptyRetryTimer();
+      clearLimitCountdownTimer();
       set({
         runStatus: "idle",
         runStatusText: null,
@@ -1129,6 +1231,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
         queue: [],
         error: null,
         emptyResponseRetry: null,
+        limitCountdown: null,
         undoSnapshot: null,
         undoAvailable: false,
       });
@@ -1144,6 +1247,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
       activeRun = null;
       runSequence += 1;
       clearEmptyRetryTimer();
+      clearLimitCountdownTimer();
 
       try {
         await runtime.replaceProject(snapshot);
@@ -1154,6 +1258,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
           runStatus: "idle",
           runStatusText: null,
           emptyResponseRetry: null,
+          limitCountdown: null,
           history: [],
           messages: [
             ...current.messages,
@@ -1182,7 +1287,8 @@ export const useAgentStore = create<AgentState>((set, get) => {
       activeRun = null;
       runSequence += 1;
       clearEmptyRetryTimer();
-      set({ emptyResponseRetry: null });
+      clearLimitCountdownTimer();
+      set({ emptyResponseRetry: null, limitCountdown: null });
 
       const projectId = getBoundProjectId();
       let persisted: Awaited<ReturnType<typeof readPersistedAgentState>> = null;
@@ -1243,12 +1349,14 @@ export const useAgentStore = create<AgentState>((set, get) => {
       activeRun = null;
       runSequence += 1;
       clearEmptyRetryTimer();
+      clearLimitCountdownTimer();
       set({
         messages: [],
         history: [],
         todos: [],
         queue: [],
         emptyResponseRetry: null,
+        limitCountdown: null,
         undoSnapshot: null,
         undoAvailable: false,
         runStatus: "idle",

@@ -193,8 +193,10 @@ Each turn:
 4. File tools write through `IdeRuntime`, which mirrors every mutation into OPFS.
 5. `todo_write` updates the pinned task panel instead of producing a tool card.
 6. The loop repeats until the model answers without tool calls (max 100 steps). If
-   the limit is reached, a **Keep going** card resumes the loop from the saved
-   history without a new user message.
+   the limit is reached, a **Keep going** card appears with a 3-second countdown.
+   If it is not cancelled, the harness clicks Keep going automatically and resumes
+   from the saved history. **Cancel** stops the automatic resume; the Keep going
+   button stays available for a manual retry.
 7. The pre-turn snapshot powers **Undo run**; a chime marks completion.
 8. If the model ends with an empty response, a 3-second countdown sends
    `keep going`. **Cancel** stops the automatic retry; the button disables once
