@@ -20,7 +20,7 @@ import { runtime } from '@/lib/runtime';
 import { useUiStore } from './ui';
 import { useWorkspaceStore } from './workspace';
 
-const MAX_STEPS = 8;
+const MAX_STEPS = 100;
 const MAX_HISTORY_MESSAGES = 40;
 const ENGINE_STORAGE_KEY = 'forge.agent.engine';
 

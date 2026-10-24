@@ -177,7 +177,7 @@ Each turn:
 3. Tool calls are executed in order against the almostnode `VirtualFS`.
 4. File tools write through `IdeRuntime`, which mirrors every mutation into OPFS.
 5. `todo_write` updates the pinned task panel instead of producing a tool card.
-6. The loop repeats until the model answers without tool calls (max 8 steps). If
+6. The loop repeats until the model answers without tool calls (max 100 steps). If
    the limit is reached, a **Keep going** card resumes the loop from the saved
    history without a new user message.
 7. The pre-turn snapshot powers **Undo run**; a chime marks completion.
