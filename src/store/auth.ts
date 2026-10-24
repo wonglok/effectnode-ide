@@ -6,10 +6,13 @@ export type AuthPhase = 'checking' | 'locked' | 'unlocked' | 'offline';
 
 interface AuthState {
   phase: AuthPhase;
+  /** Whether the server has a password gate configured. */
+  required: boolean | null;
   submitting: boolean;
   error: string | null;
   check: () => Promise<void>;
   unlock: (password: string) => Promise<void>;
+  logout: () => void;
 }
 
 /**
@@ -17,8 +20,9 @@ interface AuthState {
  * password; this browser keeps it in localStorage and sends it with every REST
  * request, so the token is shared across tabs on the same origin.
  */
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   phase: 'checking',
+  required: null,
   submitting: false,
   error: null,
 
@@ -29,11 +33,11 @@ export const useAuthStore = create<AuthState>((set) => ({
       const status = await authApi.status();
       if (status.required && !status.unlocked) {
         if (token) clearAuthToken();
-        set({ phase: 'locked' });
+        set({ phase: 'locked', required: status.required });
         return;
       }
       if (!status.required && token) clearAuthToken();
-      set({ phase: 'unlocked' });
+      set({ phase: 'unlocked', required: status.required });
     } catch (error) {
       set({
         phase: 'offline',
@@ -50,6 +54,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       if (rejected) clearAuthToken();
       set({
         submitting: false,
+        required: status.required,
         phase: rejected ? 'locked' : 'unlocked',
         error: rejected ? status.message ?? 'Incorrect password' : null,
       });
@@ -59,5 +64,17 @@ export const useAuthStore = create<AuthState>((set) => ({
         error: error instanceof Error ? error.message : String(error),
       });
     }
+  },
+
+  /** Drop the JWT and return to the unlock gate (files stay in OPFS). */
+  logout: () => {
+    clearAuthToken();
+    set((state) => ({
+      phase: state.required === false ? 'unlocked' : 'locked',
+      submitting: false,
+      error: null,
+    }));
+    // Re-check so a server without a gate does not stay stuck on the lock UI.
+    void get().check();
   },
 }));

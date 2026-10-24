@@ -350,6 +350,12 @@ code {
   border-color: var(--line);
 }
 
+.tool-button.tool-logout:hover {
+  color: var(--red);
+  background: rgba(255, 115, 105, 0.08);
+  border-color: rgba(255, 115, 105, 0.26);
+}
+
 .tool-label {
   font-family: var(--font-mono);
   font-size: 10.5px;

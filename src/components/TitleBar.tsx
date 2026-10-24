@@ -5,6 +5,7 @@ import {
   FilePlus2,
   FolderKanban,
   Loader2,
+  LogOut,
   RotateCw,
   Save,
   Upload,
@@ -13,6 +14,8 @@ import { saveProject } from '@/lib/actions';
 import { downloadProjectZip } from '@/lib/download-zip';
 import { readProjectArchive } from '@/lib/project-archive';
 import { runtime } from '@/lib/runtime';
+import { useAgentStore } from '@/store/agent';
+import { useAuthStore } from '@/store/auth';
 import { useProjectStore } from '@/store/projects';
 import { useRuntimeStore } from '@/store/runtime';
 import { useUiStore } from '@/store/ui';
@@ -39,6 +42,9 @@ export function TitleBar() {
   const setShortcutsOpen = useUiStore((state) => state.setShortcutsOpen);
   const setTerminalTab = useUiStore((state) => state.setTerminalTab);
   const toast = useUiStore((state) => state.toast);
+  const authRequired = useAuthStore((state) => state.required);
+  const logout = useAuthStore((state) => state.logout);
+  const clearAgentChat = useAgentStore((state) => state.clear);
 
   const importInputRef = useRef<HTMLInputElement>(null);
 
@@ -81,6 +87,12 @@ export function TitleBar() {
         void newProject('untitled');
       },
     });
+  };
+
+  const onLogout = () => {
+    // Abort any running agent and drop its transcript before locking the UI.
+    clearAgentChat();
+    logout();
   };
 
   return (
@@ -164,6 +176,20 @@ export function TitleBar() {
           <span className="status-dot" />
           {STATUS_LABEL[status] ?? status}
         </button>
+
+        {authRequired ? (
+          <>
+            <span className="titlebar-divider" />
+            <button
+              className="tool-button tool-logout"
+              onClick={onLogout}
+              title="Lock the session and return to the unlock screen"
+            >
+              <LogOut size={13} />
+              <span className="tool-label">Logout</span>
+            </button>
+          </>
+        ) : null}
       </div>
     </header>
   );
