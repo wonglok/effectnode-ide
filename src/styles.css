@@ -2434,6 +2434,76 @@ code {
   overflow-wrap: anywhere;
 }
 
+.agent-row-refresh {
+  margin-left: 30px;
+}
+
+.agent-refresh-bubble {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--panel-2);
+}
+
+.agent-refresh-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: var(--accent-wash);
+  color: var(--accent);
+}
+
+.agent-refresh-copy {
+  flex: 1 1 140px;
+  min-width: 0;
+  color: var(--faint);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.agent-refresh-copy strong {
+  display: block;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+
+.agent-refresh-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 9px;
+  flex: none;
+  border: 1px solid var(--accent-line);
+  border-radius: 6px;
+  background: var(--accent-wash);
+  color: var(--accent-soft);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transition: background 140ms ease, color 140ms ease, transform 100ms ease;
+}
+
+.agent-refresh-button:hover {
+  background: rgba(183, 243, 75, 0.14);
+  color: var(--text);
+}
+
+.agent-refresh-button:active {
+  transform: translateY(1px);
+}
+
 .agent-row-assistant {
   gap: 8px;
   align-items: flex-start;

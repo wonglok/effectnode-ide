@@ -37,7 +37,8 @@ export type AgentMessage =
   | { id: string; role: 'assistant'; content: string; streaming: boolean; at: number }
   | { id: string; role: 'tool'; tool: AgentToolEvent; at: number }
   | { id: string; role: 'error'; content: string; at: number }
-  | { id: string; role: 'notice'; content: string; at: number };
+  | { id: string; role: 'notice'; content: string; at: number }
+  | { id: string; role: 'refresh'; at: number };
 
 export interface AgentState {
   config: AgentConfig;
@@ -308,12 +309,17 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         return;
       }
 
-      set({
+      const refreshMessage: AgentMessage = {
+        id: makeId('refresh'),
+        role: 'refresh',
+        at: Date.now(),
+      };
+      set((current) => ({
         runStatus: 'idle',
         step: 0,
-        messages: finalizeStreaming(get().messages),
+        messages: [...finalizeStreaming(current.messages), refreshMessage],
         ...(changed ? { undoSnapshot: snapshot, undoAvailable: true } : {}),
-      });
+      }));
       playCompletionChime();
     } catch (error) {
       if (runId !== runSequence) return;

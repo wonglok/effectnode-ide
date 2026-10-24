@@ -8,6 +8,7 @@ import {
   FolderOpen,
   Loader2,
   Pencil,
+  RefreshCw,
   Settings2,
   Sparkles,
   Square,
@@ -20,6 +21,7 @@ import {
   useAgentStore,
   type AgentToolEvent,
 } from "@/store/agent";
+import { useRuntimeStore } from "@/store/runtime";
 import { useUiStore } from "@/store/ui";
 import { useWorkspaceStore } from "@/store/workspace";
 import { RichText } from "./RichText";
@@ -37,6 +39,42 @@ function TypingDots() {
       <span />
       <span />
     </span>
+  );
+}
+
+function RefreshBubble() {
+  const reloadPreview = useRuntimeStore((state) => state.reloadPreview);
+  const [refreshed, setRefreshed] = useState(false);
+
+  useEffect(() => {
+    if (!refreshed) return;
+    const timer = window.setTimeout(() => setRefreshed(false), 1600);
+    return () => window.clearTimeout(timer);
+  }, [refreshed]);
+
+  return (
+    <div className="agent-row agent-row-refresh">
+      <div className="agent-refresh-bubble">
+        <span className="agent-refresh-icon">
+          <RefreshCw size={13} />
+        </span>
+        <span className="agent-refresh-copy">
+          <strong>Task complete</strong>
+          Reload the preview to see the latest changes.
+        </span>
+        <button
+          type="button"
+          className="agent-refresh-button"
+          onClick={() => {
+            reloadPreview();
+            setRefreshed(true);
+          }}
+        >
+          {refreshed ? <Check size={12} /> : <RefreshCw size={12} />}
+          {refreshed ? "Refreshed" : "Refresh web"}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -324,6 +362,9 @@ export function AgentPanel() {
               }
               if (message.role === "tool") {
                 return <ToolCard key={message.id} tool={message.tool} />;
+              }
+              if (message.role === "refresh") {
+                return <RefreshBubble key={message.id} />;
               }
               if (message.role === "error") {
                 return (
