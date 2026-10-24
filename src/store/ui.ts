@@ -28,6 +28,8 @@ export interface ConfirmRequest {
 
 export type TerminalTab = "terminal" | "console";
 
+export type SidebarView = "files" | "references";
+
 export interface TerminalLine {
   id: number;
   kind: "command" | "output" | "error" | "muted";
@@ -39,6 +41,7 @@ let terminalSequence = 0;
 
 interface UiState {
   explorerOpen: boolean;
+  sidebarView: SidebarView;
   terminalOpen: boolean;
   terminalTab: TerminalTab;
   agentWidth: number;
@@ -56,6 +59,7 @@ interface UiState {
   dismissToast: (id: number) => void;
   setExplorerOpen: (open: boolean) => void;
   toggleExplorer: () => void;
+  setSidebarView: (view: SidebarView) => void;
   setTerminalOpen: (open: boolean) => void;
   toggleTerminal: () => void;
   setTerminalTab: (tab: TerminalTab) => void;
@@ -80,6 +84,7 @@ export const useUiStore = create<UiState>()(
   persist(
     (set, get) => ({
       explorerOpen: true,
+      sidebarView: "files",
       terminalOpen: true,
       terminalTab: "console",
       agentWidth: 380,
@@ -116,6 +121,8 @@ export const useUiStore = create<UiState>()(
       setExplorerOpen: (open) => set({ explorerOpen: open }),
       toggleExplorer: () =>
         set((state) => ({ explorerOpen: !state.explorerOpen })),
+      setSidebarView: (view) =>
+        set({ sidebarView: view, explorerOpen: true }),
       setTerminalOpen: (open) => set({ terminalOpen: open }),
       toggleTerminal: () =>
         set((state) => ({ terminalOpen: !state.terminalOpen })),
@@ -157,6 +164,7 @@ export const useUiStore = create<UiState>()(
       name: "forge.ui",
       partialize: (state) => ({
         explorerOpen: state.explorerOpen,
+        sidebarView: state.sidebarView,
         terminalOpen: state.terminalOpen,
         terminalTab: state.terminalTab,
         agentWidth: state.agentWidth,

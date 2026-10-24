@@ -7,6 +7,7 @@ import {
 } from '@/components/Dialogs';
 import { EditorPane } from '@/components/EditorPane';
 import { FileExplorer } from '@/components/FileExplorer';
+import { ReferenceExplorer } from '@/components/ReferenceExplorer';
 import { RightDock } from '@/components/RightDock';
 import { StatusBar } from '@/components/StatusBar';
 import { TerminalPane } from '@/components/TerminalPane';
@@ -20,6 +21,7 @@ import { useUiStore } from '@/store/ui';
 
 export default function App() {
   const explorerOpen = useUiStore((state) => state.explorerOpen);
+  const sidebarView = useUiStore((state) => state.sidebarView);
   const terminalOpen = useUiStore((state) => state.terminalOpen);
   const agentWidth = useUiStore((state) => state.agentWidth);
   const previewRatio = useUiStore((state) => state.previewRatio);
@@ -133,7 +135,13 @@ export default function App() {
 
       <div className="workspace">
         <ActivityRail />
-        {explorerOpen ? <FileExplorer /> : null}
+        {explorerOpen ? (
+          sidebarView === 'references' ? (
+            <ReferenceExplorer />
+          ) : (
+            <FileExplorer />
+          )
+        ) : null}
 
         <main className="stage" ref={stageRef}>
           <section className="editing" ref={editingRef}>
