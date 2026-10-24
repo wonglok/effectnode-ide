@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { authApi } from '@/lib/api';
+import { clearAuthToken, readAuthToken } from '@/lib/auth-token';
 
 export type AuthPhase = 'checking' | 'locked' | 'unlocked' | 'offline';
 
@@ -11,7 +12,11 @@ interface AuthState {
   unlock: (password: string) => Promise<void>;
 }
 
-/** Server-backed UI gate; the lock cookie is HttpOnly and shared across tabs. */
+/**
+ * Server-backed UI gate. The server issues a no-expiry JWT after a correct
+ * password; this browser keeps it in localStorage and sends it with every REST
+ * request, so the token is shared across tabs on the same origin.
+ */
 export const useAuthStore = create<AuthState>((set) => ({
   phase: 'checking',
   submitting: false,
@@ -19,9 +24,16 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   check: async () => {
     set({ phase: 'checking', error: null });
+    const token = readAuthToken();
     try {
       const status = await authApi.status();
-      set({ phase: status.required && !status.unlocked ? 'locked' : 'unlocked' });
+      if (status.required && !status.unlocked) {
+        if (token) clearAuthToken();
+        set({ phase: 'locked' });
+        return;
+      }
+      if (!status.required && token) clearAuthToken();
+      set({ phase: 'unlocked' });
     } catch (error) {
       set({
         phase: 'offline',
@@ -35,6 +47,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     try {
       const status = await authApi.unlock(password);
       const rejected = status.required && !status.unlocked;
+      if (rejected) clearAuthToken();
       set({
         submitting: false,
         phase: rejected ? 'locked' : 'unlocked',

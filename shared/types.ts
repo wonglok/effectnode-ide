@@ -83,5 +83,7 @@ export interface AuthStatusResponse {
   unlocked: boolean;
   /** Present when an unlock attempt was rejected. */
   message?: string;
+  /** Issued by a successful POST /api/auth; stored by the client. */
+  token?: string;
 }
 

@@ -5,6 +5,7 @@ import type {
   AgentToolDefinition,
 } from '../../shared/types';
 import type { AgentConfig } from './agent-config';
+import { authHeaders, handleUnauthorized } from './auth-token';
 
 export interface AgentStreamOptions {
   messages: AgentChatMessage[];
@@ -44,8 +45,9 @@ async function errorFromResponse(response: Response): Promise<Error> {
 
 export async function fetchAgentStatus(): Promise<AgentStatusResponse> {
   const response = await fetch('/api/agent/status', {
-    headers: { Accept: 'application/json' },
+    headers: { Accept: 'application/json', ...authHeaders() },
   });
+  handleUnauthorized(response);
   if (!response.ok) throw await errorFromResponse(response);
   return (await response.json()) as AgentStatusResponse;
 }
@@ -67,6 +69,7 @@ export async function streamAgentChat(options: AgentStreamOptions): Promise<Agen
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     Accept: 'text/event-stream',
+    ...authHeaders(),
   };
   if (config.apiKey.trim()) headers['x-agent-key'] = config.apiKey.trim();
 
@@ -81,6 +84,8 @@ export async function streamAgentChat(options: AgentStreamOptions): Promise<Agen
     }),
     signal,
   });
+
+  handleUnauthorized(response);
 
   if (!response.ok) throw await errorFromResponse(response);
 

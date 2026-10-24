@@ -7,6 +7,11 @@ import type {
   ProjectSnapshot,
   SaveProjectPayload,
 } from '../../shared/types';
+import {
+  authHeaders,
+  handleUnauthorized,
+  writeAuthToken,
+} from './auth-token';
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch('/api' + path, {
@@ -14,9 +19,12 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     headers: {
       Accept: 'application/json',
       ...(init.body ? { 'Content-Type': 'application/json' } : {}),
+      ...authHeaders(),
       ...init.headers,
     },
   });
+
+  handleUnauthorized(response);
 
   if (!response.ok) {
     let message = `Request failed (${response.status})`;
@@ -36,11 +44,14 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 export const authApi = {
   status: () => request<AuthStatusResponse>('/auth'),
 
-  unlock: (password: string) =>
-    request<AuthStatusResponse>('/auth', {
+  unlock: async (password: string): Promise<AuthStatusResponse> => {
+    const status = await request<AuthStatusResponse>('/auth', {
       method: 'POST',
       body: JSON.stringify({ password }),
-    }),
+    });
+    if (status.token) writeAuthToken(status.token);
+    return status;
+  },
 };
 
 export const projectApi = {

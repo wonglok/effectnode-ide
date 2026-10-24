@@ -1,8 +1,11 @@
 import { defineEventHandler, readBody } from 'h3';
-import { authStatus, grantUnlock, isAuthRequired, verifyPassword } from '../../utils/auth';
+import type { AuthStatusResponse } from '../../../shared/types';
+import { issueJwt, isAuthRequired, verifyPassword } from '../../utils/auth';
 
-export default defineEventHandler(async (event) => {
-  if (!isAuthRequired()) return authStatus(event);
+export default defineEventHandler(async (event): Promise<AuthStatusResponse> => {
+  if (!isAuthRequired()) {
+    return { required: false, unlocked: true };
+  }
 
   const body = await readBody<{ password?: unknown }>(event).catch(() => null);
   const candidate = body && typeof body.password === 'string' ? body.password : '';
@@ -15,7 +18,5 @@ export default defineEventHandler(async (event) => {
     return { required: true, unlocked: false, message: 'Incorrect password' };
   }
 
-  grantUnlock(event);
-  // The request's cookies do not include the one just set, so report it here.
-  return { required: true, unlocked: true };
+  return { required: true, unlocked: true, token: issueJwt() };
 });

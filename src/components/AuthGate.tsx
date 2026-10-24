@@ -1,10 +1,11 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { Loader2, LockKeyhole } from 'lucide-react';
+import { AUTH_CHANGED_EVENT } from '@/lib/auth-token';
 import { useAuthStore } from '@/store/auth';
 
 /**
- * Keeps the IDE unmounted until the server confirms an unlock cookie. The
- * password itself never reaches the client; only the HttpOnly session cookie.
+ * Keeps the IDE unmounted until the server accepts the stored JWT. The password
+ * is exchanged for a no-expiry token after a successful unlock.
  */
 export function AuthGate({ children }: { children: ReactNode }) {
   const phase = useAuthStore((state) => state.phase);
@@ -16,6 +17,15 @@ export function AuthGate({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     void useAuthStore.getState().check();
+  }, []);
+
+  // A 401 from any REST call clears the token; re-check so the gate returns.
+  useEffect(() => {
+    const onAuthChanged = () => {
+      void useAuthStore.getState().check();
+    };
+    window.addEventListener(AUTH_CHANGED_EVENT, onAuthChanged);
+    return () => window.removeEventListener(AUTH_CHANGED_EVENT, onAuthChanged);
   }, []);
 
   if (phase === 'unlocked') return <>{children}</>;

@@ -1,8 +1,11 @@
 import { createError, defineEventHandler, getRouterParam } from 'h3';
-import type { ProjectSnapshot } from '../../../../shared/types';
+import { authGuard } from '../../../utils/auth';
 import { getProject, ProjectValidationError } from '../../../utils/projects';
 
-export default defineEventHandler(async (event): Promise<ProjectSnapshot> => {
+export default defineEventHandler(async (event) => {
+  const denied = await authGuard(event);
+  if (denied) return denied;
+
   const id = getRouterParam(event, 'id');
   if (!id) {
     throw createError({ statusCode: 400, statusMessage: 'Bad Request', message: 'Missing project id' });

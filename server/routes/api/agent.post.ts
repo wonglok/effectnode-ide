@@ -1,5 +1,6 @@
 import { createError, defineEventHandler, getHeader, readBody } from 'h3';
 import type { AgentProxyRequest } from '../../../shared/types';
+import { authGuard } from '../../utils/auth';
 
 const MAX_MESSAGES = 80;
 const MAX_MESSAGE_CHARS = 300_000;
@@ -83,6 +84,9 @@ function validateBody(body: AgentProxyRequest | undefined): AgentProxyRequest {
 }
 
 export default defineEventHandler(async (event) => {
+  const denied = await authGuard(event);
+  if (denied) return denied;
+
   const body = validateBody(await readBody<AgentProxyRequest>(event));
 
   const clientKey = (getHeader(event, 'x-agent-key') || '').trim();

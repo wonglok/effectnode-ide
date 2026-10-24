@@ -51,11 +51,19 @@ Set `PORT` to change the production port. Saved projects live in
 ### UI password
 
 Set `FORGE_PASSWORD` to require a password before the IDE mounts (the local
-`.env` in this checkout uses `12123`). The server compares it in constant time,
-sets an HttpOnly `forge_unlock` cookie for 30 days, and exposes the gate through
-`GET/POST /api/auth`. Leave the variable empty to disable the gate. This is a
-simple shared-secret UI lock, not a multi-user account system — API routes are
-not individually authenticated.
+`.env` in this checkout uses `12123`). The server compares it in constant time
+and, on `POST /api/auth`, returns a signed **JWT with no `exp` claim**. The
+browser stores that token in `localStorage` under `sandbox-ide-jwt` and sends it
+as `Authorization: Bearer <token>` on every REST request. All API routes except
+`GET/POST /api/auth` reject requests without a valid token.
+
+Leave `FORGE_PASSWORD` empty to disable the gate. The token is signed with
+`FORGE_JWT_SECRET` when set; otherwise the secret is derived from the password,
+so changing the password revokes existing tokens. Set an explicit secret if you
+want to rotate the password without invalidating sessions. Because the token
+lives in `localStorage`, prevent XSS as you would for any token-based client.
+In the Vite dev server, rejected API calls use **403** instead of 401 because
+Nitro 3's dev worker crashes on 401 POST responses; production keeps **401**.
 
 ### Deploying to Vercel
 
@@ -221,13 +229,16 @@ tree, tabs, buffers, logs, project metadata, and layout.
 | ------ | ------------------- | ---------------------------------------- |
 | GET    | `/api/health`       | Service health                           |
 | GET    | `/api/auth`         | Whether a password is required/unlocked  |
-| POST   | `/api/auth`         | Exchange `{ password }` for an unlock cookie |
+| POST   | `/api/auth`         | Exchange `{ password }` for a no-expiry JWT |
 | GET    | `/api/projects`     | List project metadata                    |
 | POST   | `/api/projects`     | Create/update `{ id?, name, files }`     |
 | GET    | `/api/projects/:id` | Fetch a full snapshot                    |
 | DELETE | `/api/projects/:id` | Delete a saved project                   |
 | GET    | `/api/agent/status` | Whether a server key is configured       |
 | POST   | `/api/agent`        | Stream a chat completion from the provider |
+
+All routes except `GET /api/auth` and `POST /api/auth` require
+`Authorization: Bearer <token>` when `FORGE_PASSWORD` is configured.
 
 Snapshots are capped at 500 files / 2 MB, paths must be absolute, and
 `node_modules` is rejected. Project JSON is stored on disk locally and in Vercel

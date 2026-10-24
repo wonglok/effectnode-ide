@@ -1,9 +1,4 @@
-import {
-  CircleHelp,
-  Files,
-  FolderKanban,
-  SquareTerminal,
-} from "lucide-react";
+import { CircleHelp, Files, FolderKanban, SquareTerminal } from "lucide-react";
 import { useRuntimeStore } from "@/store/runtime";
 import { useUiStore } from "@/store/ui";
 
