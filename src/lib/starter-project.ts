@@ -4,7 +4,7 @@
  * build time with Vite's `?raw` imports, so they stay readable and editable
  * while the browser receives plain strings.
  *
- * The starter is a four-chapter, scroll-driven landing page for MY COMPANY:
+ * The starter is a five-chapter, scroll-driven landing page for MY COMPANY:
  * a Zustand scroll store, a chapter timeline, and one canvas that draws every
  * scene. Each chapter's drawing code lives in its own `src/sections/<scene>/`
  * folder. The in-browser ViteDevServer compiles the TSX with esbuild-wasm and
@@ -23,6 +23,7 @@ import appTsx from '../../starter-files/src/App.tsx?raw';
 import stylesCss from '../../starter-files/src/styles.css?raw';
 import registryTs from '../../starter-files/src/sections/registry.ts?raw';
 import sharedSceneTs from '../../starter-files/src/sections/shared.ts?raw';
+import forceShieldSceneTs from '../../starter-files/src/sections/force-shield/index.ts?raw';
 import kineticSceneTs from '../../starter-files/src/sections/kinetic/index.ts?raw';
 import kineticCenterTextTs from '../../starter-files/src/sections/kinetic/center-text.ts?raw';
 import kineticHelveticaTs from '../../starter-files/src/sections/kinetic/helvetica.ts?raw';
@@ -57,6 +58,7 @@ export const STARTER_FILES: Record<string, string> = {
   '/src/styles.css': stylesCss,
   '/src/sections/registry.ts': registryTs,
   '/src/sections/shared.ts': sharedSceneTs,
+  '/src/sections/force-shield/index.ts': forceShieldSceneTs,
   '/src/sections/kinetic/index.ts': kineticSceneTs,
   '/src/sections/kinetic/center-text.ts': kineticCenterTextTs,
   '/src/sections/kinetic/helvetica.ts': kineticHelveticaTs,

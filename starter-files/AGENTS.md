@@ -8,7 +8,7 @@ and external coding agents should follow these rules when changing the project.
 - Use Zustand for shared React state. Local UI state may stay in `useState`.
   Do not introduce another state library.
 - Keep the hash-based navigation intact: `StoryRouter.tsx` connects
-  `HashRouter` (`#/scene-01` through `#/scene-04`) to the scroll store. Do not
+  `HashRouter` (`#/scene-01` through `#/scene-05`) to the scroll store. Do not
   add a second router or bypass the store when changing chapters.
 - Preserve the chapter order and IDs in `src/sections/registry.ts`. Scroll
   anchors, HUD labels, transitions, and routes all depend on them.
@@ -29,7 +29,7 @@ and external coding agents should follow these rules when changing the project.
 - This project renders with `WebGPURenderer` and TSL, not `WebGLRenderer` or
   GLSL. Translate supplied GLSL, WebGL, or `THREE.WebGLRenderer` code to
   `three/webgpu` and `three/tsl` before adding it.
-- The chapter 1 title uses per-line `TextGeometry` with
+- The chapter 2 title uses per-line `TextGeometry` with
   `MeshPhysicalNodeMaterial` transmission. Keep that path WebGPU-compatible.
 - Each chapter owns its scene, camera, and render pass. Scene drawing code lives
   in `src/sections/<scene>/index.ts`; `RenderPipeline` composes the scenes and
@@ -56,10 +56,11 @@ and external coding agents should follow these rules when changing the project.
 ## Layout
 
 - `src/components/SceneStage.tsx` — renderer and chapter orchestration.
-- `src/sections/kinetic/` — chapter 1 scene, glass title, and bundled font.
-- `src/sections/flow-shield/` — chapter 2 scene.
-- `src/sections/live-env/` — chapter 3 scene.
-- `src/sections/alpha6/` — chapter 4 scene.
+- `src/sections/force-shield/` — chapter 1 TSL force-field scene.
+- `src/sections/kinetic/` — chapter 2 scene, glass title, and bundled font.
+- `src/sections/flow-shield/` — chapter 3 flow-line scene.
+- `src/sections/live-env/` — chapter 4 scene.
+- `src/sections/alpha6/` — chapter 5 scene.
 - `src/sections/shared.ts` — shared chapter types and TSL scene helpers.
 - `src/lib/render-pipeline.ts` — pass composition and shader transitions.
 - `src/store/useScrollerStore.ts` — Zustand scroll engine and chapter state.

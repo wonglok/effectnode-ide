@@ -3,6 +3,7 @@ import * as THREE from "three/webgpu";
 import { pass } from "three/tsl";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { SECTIONS } from "../sections/registry.ts";
+import { buildForceShield } from "../sections/force-shield/index.ts";
 import { buildKinetic } from "../sections/kinetic/index.ts";
 import { buildFlow } from "../sections/flow-shield/index.ts";
 import { buildLiveEnv } from "../sections/live-env/index.ts";
@@ -12,7 +13,13 @@ import { SectionRenderPipeline } from "../lib/render-pipeline.ts";
 import { getSectionPhaseAt } from "../lib/scroll-phases.ts";
 import { useScrollerStore } from "../store/useScrollerStore.ts";
 
-const BUILDERS = [buildKinetic, buildFlow, buildLiveEnv, buildAlpha];
+const BUILDERS = [
+  buildForceShield,
+  buildKinetic,
+  buildFlow,
+  buildLiveEnv,
+  buildAlpha,
+];
 
 export function SceneStage() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -64,6 +71,30 @@ export function SceneStage() {
       target.y = ((event.clientY - rect.top) / rect.height) * 2 - 1;
     };
     window.addEventListener("pointermove", onPointerMove, { passive: true });
+
+    const raycaster = new THREE.Raycaster();
+    const pointerNdc = new THREE.Vector2();
+    const onPointerDown = (event: PointerEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      pointerNdc.set(
+        ((event.clientX - rect.left) / rect.width) * 2 - 1,
+        -((event.clientY - rect.top) / rect.height) * 2 + 1,
+      );
+
+      const state = useScrollerStore.getState();
+      const index =
+        state.isTransitioning && state.transitionProgress > 0.5
+          ? state.toIndex
+          : state.fromIndex;
+      const world = worlds[index];
+      const camera = cameras[index];
+      if (!world || !camera) return;
+
+      raycaster.setFromCamera(pointerNdc, camera);
+      const hit = raycaster.intersectObject(world.group, true)[0];
+      if (hit) world.onPointerDown?.(hit.point);
+    };
+    canvas.addEventListener("pointerdown", onPointerDown);
 
     let width = 1;
     let height = 1;
@@ -215,6 +246,7 @@ export function SceneStage() {
       observer?.disconnect();
       window.removeEventListener("resize", resize);
       window.removeEventListener("pointermove", onPointerMove);
+      canvas.removeEventListener("pointerdown", onPointerDown);
 
       worlds.forEach((world) => {
         world.group.traverse((object) => {

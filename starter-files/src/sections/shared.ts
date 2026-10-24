@@ -14,6 +14,8 @@ export type Pointer = { x: number; y: number };
 export type ChapterWorld = {
   group: THREE.Group;
   resize?: (aspect: number) => void;
+  /** Optional interaction hook; `point` is in world space. */
+  onPointerDown?: (point: THREE.Vector3) => void;
   update: (time: number, pointer: Pointer, phase?: SectionPhaseState) => void;
 };
 
