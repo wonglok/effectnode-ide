@@ -78,6 +78,6 @@ and external coding agents should follow these rules when changing the project.
   console are the acceptance criteria.
 - Write scratch files under `.claude/temp`, never in the project tree.
 
-## Must follow guidelines:
+# Three.js Content
 
-Must translate glsl to TSL for threejs content
+if user provided any glsl code or webgl code or webgl 2.0 code or threeJS WebGLRenderer code please translate to ThreeJS WebGPURenderer Code with TSL (threejs shader language) for the current project's threejs to use.
