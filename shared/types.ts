@@ -51,6 +51,17 @@ export interface ClaudeAgentStatus {
   effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 }
 
+export interface PiAgentStatus {
+  configured: boolean;
+  provider: 'pi';
+  api: 'anthropic-messages';
+  harness: 'pi-agent-core';
+  model: string;
+  thinkingLevel: string;
+  /** Anthropic-style endpoint the browser harness calls with its Forge JWT. */
+  proxyUrl: string;
+}
+
 export interface AgentStatusResponse {
   configured: boolean;
   provider: string;
@@ -63,9 +74,11 @@ export interface AgentStatusResponse {
   defaultModel: string;
   /** Frontend Claude agent (Anthropic Messages API via the JWT proxy). */
   claude: ClaudeAgentStatus;
+  /** Frontend Pi harness (pi-agent-core + pi-ai via the JWT proxy). */
+  pi: PiAgentStatus;
 }
 
-export type AgentEngine = 'claude' | 'deepseek';
+export type AgentEngine = 'claude' | 'deepseek' | 'pi';
 
 /** Body accepted by POST /api/deepseek/chat/completions. */
 export interface DeepSeekChatRequest {

@@ -411,7 +411,9 @@ function AgentLoader({
         <span>
           {engine === "claude"
             ? "Frontend Claude agent · Anthropic proxy · JWT auth"
-            : "Frontend agent · DeepSeek proxy · JWT auth"}
+            : engine === "pi"
+              ? "Pi agent harness · pi-agent-core · JWT proxy"
+              : "Frontend agent · DeepSeek proxy · JWT auth"}
         </span>
       </span>
       <span className="agent-loader-bars" aria-hidden="true">
@@ -478,13 +480,21 @@ export function AgentPanel() {
   const model =
     engine === "claude"
       ? status?.claude?.model ?? ""
-      : status?.model ?? "";
+      : engine === "pi"
+        ? status?.pi?.model ?? ""
+        : status?.model ?? "";
   const provider =
-    engine === "claude" ? "anthropic" : status?.provider ?? "";
+    engine === "claude"
+      ? "anthropic"
+      : engine === "pi"
+        ? status?.pi?.provider ?? "pi"
+        : status?.provider ?? "";
   const proxyUrl =
     engine === "claude"
       ? status?.claude?.proxyUrl
-      : status?.proxyUrl;
+      : engine === "pi"
+        ? status?.pi?.proxyUrl
+        : status?.proxyUrl;
   const configured = useAgentStore(selectAgentConfigured);
   const send = useAgentStore((state) => state.send);
   const stop = useAgentStore((state) => state.stop);
@@ -601,6 +611,16 @@ export function AgentPanel() {
           >
             <button
               type="button"
+              className={engine === "pi" ? "is-active" : ""}
+              aria-pressed={engine === "pi"}
+              disabled={running}
+              onClick={() => setEngine("pi")}
+              title="Pi agent harness · pi-agent-core · Anthropic proxy (default)"
+            >
+              pi
+            </button>
+            <button
+              type="button"
               className={engine === "claude" ? "is-active" : ""}
               aria-pressed={engine === "claude"}
               disabled={running}
@@ -656,8 +676,12 @@ export function AgentPanel() {
                 I run in this tab with tools against your project, and the preview
                 hot-reloads as I work. My model calls go through the server's
                 JWT-authenticated{" "}
-                {engine === "claude" ? "Anthropic-style" : "DeepSeek"} proxy, so
-                the API key stays server-side.
+                {engine === "claude"
+                  ? "Anthropic-style"
+                  : engine === "pi"
+                    ? "Pi harness"
+                    : "DeepSeek"}{" "}
+                proxy, so the API key stays server-side.
               </p>
               <div className="agent-suggestions">
                 {SUGGESTIONS.map((suggestion) => (
@@ -675,7 +699,10 @@ export function AgentPanel() {
               <div className="agent-welcome-meta">
                 <code>{provider}/{model}</code>
                 <span>·</span>
-                <span>tools: read · write · edit · list · shell · plan</span>
+                <span>
+                  {engine === "pi" ? "pi-agent-core · " : ""}tools: read · write
+                  · edit · list · shell · plan
+                </span>
               </div>
             </div>
           ) : (

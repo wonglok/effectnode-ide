@@ -5,6 +5,7 @@ import type {
   AgentStatusResponse,
   AgentTodoItem,
   AgentTodoStatus,
+  AgentToolCall,
 } from "../../shared/types";
 import { fetchAgentStatus, streamAgentChat } from "@/lib/agent-client";
 import {
@@ -13,6 +14,7 @@ import {
   writePersistedAgentState,
 } from "@/lib/agent-state";
 import { streamClaudeChat } from "@/lib/claude-client";
+import { createPiSession } from "@/lib/pi-harness";
 import { autoCompactCharBudget } from "@/lib/claude-config";
 import { getBoundProjectId } from "@/lib/opfs";
 import {
@@ -35,16 +37,18 @@ const ENGINE_STORAGE_KEY = "forge.agent.engine";
 const EMPTY_RETRY_SECONDS = 3;
 const EMPTY_RETRY_PROMPT = "keep going";
 
-/** The frontend Claude agent is the default; the browser DeepSeek loop stays
- * available as a fallback and for the existing OpenAI-compatible proxy. */
+/** Pi is the default frontend harness; Claude and DeepSeek stay available as
+ * alternate transports, and an explicit prior choice is preserved. */
 function loadEngine(): AgentEngine {
-  if (typeof window === "undefined") return "claude";
+  if (typeof window === "undefined") return "pi";
   try {
-    return window.localStorage.getItem(ENGINE_STORAGE_KEY) === "deepseek"
-      ? "deepseek"
-      : "claude";
+    const stored = window.localStorage.getItem(ENGINE_STORAGE_KEY);
+    if (stored === "claude" || stored === "deepseek" || stored === "pi") {
+      return stored;
+    }
+    return "pi";
   } catch {
-    return "claude";
+    return "pi";
   }
 }
 
@@ -152,9 +156,9 @@ function clearPersistTimer(): void {
 }
 
 function isConfigured(state: AgentState): boolean {
-  return state.engine === "claude"
-    ? Boolean(state.status?.claude?.configured)
-    : Boolean(state.status?.configured);
+  if (state.engine === "claude") return Boolean(state.status?.claude?.configured);
+  if (state.engine === "pi") return Boolean(state.status?.pi?.configured);
+  return Boolean(state.status?.configured);
 }
 
 function makeId(prefix: string): string {
@@ -631,6 +635,315 @@ export const useAgentStore = create<AgentState>((set, get) => {
     }
   };
 
+  /**
+   * Pi harness path. Pi's Agent owns the multi-turn loop and tool execution;
+   * this adapter streams its lifecycle events into the same transcript UI.
+   */
+  const runPiLoop = async ({
+    baseHistory,
+    undoSnapshot,
+    controller,
+    runId,
+  }: RunLoopOptions): Promise<RunOutcome> => {
+    let changed = false;
+    let finalError: string | null = null;
+    let currentAssistantId: string | null = null;
+    let streamedText = "";
+    let streamedReasoning = "";
+    let turns = 0;
+    const toolCards = new Map<string, string>();
+
+    const undoPatch = () =>
+      changed && undoSnapshot ? { undoSnapshot, undoAvailable: true } : {};
+
+    const session = createPiSession({
+      history: trimHistory(baseHistory),
+      systemPrompt: buildAgentSystemPrompt(),
+      maxSteps: MAX_STEPS,
+      onTodos: (todos) => set({ todos }),
+    });
+
+    const onAbort = () => session.abort();
+    controller.signal.addEventListener("abort", onAbort, { once: true });
+
+    const unsubscribe = session.subscribe((event) => {
+      if (runId !== runSequence) return;
+
+      if (event.type === "turn_start") {
+        turns += 1;
+        set({ runStatusText: `Thinking · step ${turns}` });
+        return;
+      }
+
+      if (event.type === "message_start") {
+        if (event.message.role !== "assistant") return;
+        const assistantId = makeId("assistant");
+        currentAssistantId = assistantId;
+        streamedText = "";
+        streamedReasoning = "";
+        set((current) => ({
+          messages: [
+            ...current.messages,
+            {
+              id: assistantId,
+              role: "assistant",
+              content: "",
+              reasoning: "",
+              streaming: true,
+              at: Date.now(),
+            },
+          ],
+        }));
+        return;
+      }
+
+      if (event.type === "message_update") {
+        if (event.message.role !== "assistant" || !currentAssistantId) return;
+        const assistantId = currentAssistantId;
+        const update = event.assistantMessageEvent;
+        if (update.type === "text_delta") {
+          const delta = update.delta;
+          streamedText += delta;
+          set((current) => ({
+            messages: current.messages.map((message) =>
+              message.role === "assistant" && message.id === assistantId
+                ? { ...message, content: message.content + delta }
+                : message,
+            ),
+          }));
+        } else if (update.type === "thinking_delta") {
+          const delta = update.delta;
+          streamedReasoning += delta;
+          set((current) => ({
+            messages: current.messages.map((message) =>
+              message.role === "assistant" && message.id === assistantId
+                ? { ...message, reasoning: (message.reasoning ?? "") + delta }
+                : message,
+            ),
+          }));
+        }
+        return;
+      }
+
+      if (event.type === "message_end") {
+        if (event.message.role !== "assistant" || !currentAssistantId) return;
+        const assistantId = currentAssistantId;
+        const blocks = event.message.content;
+        const text = blocks
+          .map((block) => (block.type === "text" ? block.text : ""))
+          .filter(Boolean)
+          .join("\n");
+        const thinking = blocks
+          .map((block) => (block.type === "thinking" ? block.thinking : ""))
+          .filter(Boolean)
+          .join("\n");
+        const finalText = text || streamedText;
+        const finalThinking = thinking || streamedReasoning;
+        const hasToolCalls = blocks.some((block) => block.type === "toolCall");
+        // A later successful retry clears an earlier provider error.
+        finalError = event.message.errorMessage || null;
+
+        set((current) => ({
+          messages: current.messages.flatMap((message) => {
+            if (message.role !== "assistant" || message.id !== assistantId) {
+              return [message];
+            }
+            if (!finalText.trim() && !finalThinking.trim() && hasToolCalls) {
+              return [];
+            }
+            return [
+              {
+                ...message,
+                content: finalText,
+                reasoning: finalThinking,
+                streaming: false,
+              },
+            ];
+          }),
+        }));
+        currentAssistantId = null;
+        return;
+      }
+
+      if (event.type === "tool_execution_start") {
+        if (event.toolName === "todo_write") {
+          set({ runStatusText: "Updating the task plan…" });
+          return;
+        }
+
+        const call: AgentToolCall = {
+          id: event.toolCallId,
+          type: "function",
+          function: {
+            name: event.toolName,
+            arguments: JSON.stringify(event.args ?? {}),
+          },
+        };
+        const preview = describeToolCall(call);
+        const displayId = makeId("tool");
+        toolCards.set(event.toolCallId, displayId);
+        set((current) => ({
+          runStatusText: preview.summary,
+          messages: [
+            ...current.messages,
+            {
+              id: displayId,
+              role: "tool",
+              at: Date.now(),
+              tool: {
+                name: preview.name,
+                summary: preview.summary,
+                path: preview.path,
+                status: "running",
+              },
+            },
+          ],
+        }));
+        return;
+      }
+
+      if (event.type === "tool_execution_end") {
+        if (event.toolName === "todo_write") return;
+        const displayId = toolCards.get(event.toolCallId);
+        if (!displayId) return;
+
+        const details = (event.result?.details ?? {}) as {
+          summary?: string;
+          detail?: string;
+          path?: string;
+          status?: "ok" | "error";
+          changed?: boolean;
+        };
+        changed = changed || Boolean(details.changed);
+        const status: "ok" | "error" =
+          event.isError || details.status === "error" ? "error" : "ok";
+
+        set((current) => ({
+          runStatusText: details.summary ?? `Ran ${event.toolName}`,
+          messages: current.messages.map((message) =>
+            message.role === "tool" && message.id === displayId
+              ? {
+                  ...message,
+                  tool: {
+                    name: event.toolName,
+                    summary: details.summary ?? message.tool.summary,
+                    detail: details.detail,
+                    path: details.path ?? message.tool.path,
+                    status,
+                  },
+                }
+              : message,
+          ),
+        }));
+      }
+    });
+
+    try {
+      await session.continue();
+      if (runId !== runSequence) return "stopped";
+
+      if (controller.signal.aborted) {
+        set({
+          runStatus: "idle",
+          runStatusText: null,
+          history: baseHistory,
+          messages: finalizeStreaming(get().messages),
+          ...undoPatch(),
+        });
+        addNotice("Stopped.");
+        return "stopped";
+      }
+
+      if (finalError) throw new Error(finalError);
+
+      const nextHistory = session.toHistory();
+      set({ history: nextHistory });
+
+      if (session.hitLimit) {
+        set((current) => ({
+          runStatus: "idle",
+          runStatusText: null,
+          messages: [
+            ...finalizeStreaming(current.messages),
+            { id: makeId("limit"), role: "limit", steps: MAX_STEPS, at: Date.now() },
+          ],
+          ...undoPatch(),
+        }));
+        runtime.log("warn", `Agent stopped at the ${MAX_STEPS}-step limit`);
+        return "limit";
+      }
+
+      const lastAssistant = [...nextHistory]
+        .reverse()
+        .find((message) => message.role === "assistant");
+      if (
+        !lastAssistant?.tool_calls?.length &&
+        !(lastAssistant?.content ?? "").trim()
+      ) {
+        const noticeId = addNotice("The model returned an empty response.");
+        scheduleEmptyResponseRetry(noticeId);
+      }
+
+      set((current) => ({
+        runStatus: "idle",
+        runStatusText: null,
+        messages: [
+          ...finalizeStreaming(current.messages),
+          { id: makeId("refresh"), role: "refresh", at: Date.now() },
+        ],
+        ...undoPatch(),
+      }));
+      playCompletionChime();
+      return "complete";
+    } catch (error) {
+      if (runId !== runSequence) return "stopped";
+
+      const aborted =
+        controller.signal.aborted ||
+        (error instanceof DOMException && error.name === "AbortError");
+      const message = aborted
+        ? "Stopped."
+        : error instanceof Error
+          ? error.message
+          : String(error);
+
+      set({
+        runStatus: "idle",
+        runStatusText: null,
+        history: baseHistory,
+        error: aborted ? null : message,
+        messages: finalizeStreaming(get().messages),
+        ...undoPatch(),
+      });
+
+      if (aborted) {
+        addNotice("Stopped.");
+      } else {
+        set((current) => ({
+          messages: [
+            ...current.messages,
+            {
+              id: makeId("error"),
+              role: "error",
+              content: message,
+              at: Date.now(),
+            },
+          ],
+        }));
+        runtime.log("error", `Agent: ${message}`);
+      }
+      return aborted ? "stopped" : "error";
+    } finally {
+      controller.signal.removeEventListener("abort", onAbort);
+      unsubscribe();
+      session.dispose();
+      if (activeRun?.id === runId) activeRun = null;
+    }
+  };
+
+  const runSelectedLoop = (options: RunLoopOptions): Promise<RunOutcome> =>
+    get().engine === "pi" ? runPiLoop(options) : runLoop(options);
+
   /** Start one prompt. Callers must ensure the loop is idle. */
   const startPrompt = async (text: string): Promise<RunOutcome> => {
     const state = get();
@@ -658,7 +971,12 @@ export const useAgentStore = create<AgentState>((set, get) => {
       ],
     });
 
-    return runLoop({ baseHistory, undoSnapshot: snapshot, controller, runId });
+    return runSelectedLoop({
+      baseHistory,
+      undoSnapshot: snapshot,
+      controller,
+      runId,
+    });
   };
 
   /** Run queued prompts in order until the queue empties or a turn pauses. */
@@ -770,7 +1088,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
         ),
       }));
 
-      const outcome = await runLoop({
+      const outcome = await runSelectedLoop({
         baseHistory: state.history,
         undoSnapshot: snapshot,
         controller,

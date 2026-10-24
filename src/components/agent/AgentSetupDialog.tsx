@@ -14,13 +14,37 @@ function Row({ label, value }: { label: string; value: string }) {
 function ProxySettings() {
   const status = useAgentStore((state) => state.status);
   const statusLoaded = useAgentStore((state) => state.statusLoaded);
+  const engine = useAgentStore((state) => state.engine);
   const closeSetup = useAgentStore((state) => state.closeSetup);
-  const configured = Boolean(status?.configured);
+  const configured =
+    engine === 'claude'
+      ? Boolean(status?.claude?.configured)
+      : engine === 'pi'
+        ? Boolean(status?.pi?.configured)
+        : Boolean(status?.configured);
+  const provider =
+    engine === 'claude'
+      ? 'anthropic'
+      : engine === 'pi'
+        ? status?.pi?.provider ?? 'pi'
+        : status?.provider ?? 'deepseek';
+  const model =
+    engine === 'claude'
+      ? status?.claude?.model ?? 'deepseek-flash[1m]'
+      : engine === 'pi'
+        ? status?.pi?.model ?? 'deepseek-flash[1m]'
+        : status?.model ?? 'deepseek-flash';
+  const proxyUrl =
+    engine === 'claude'
+      ? status?.claude?.proxyUrl ?? '/api/anthropic/v1/messages'
+      : engine === 'pi'
+        ? status?.pi?.proxyUrl ?? '/api/anthropic/v1/messages'
+        : status?.proxyUrl ?? '/api/deepseek/chat/completions';
 
   return (
     <Modal
-      title="DeepSeek proxy"
-      subtitle="The browser agent calls a same-origin REST route with your Forge JWT."
+      title="Agent proxy"
+      subtitle="Every browser harness calls a same-origin REST route with your Forge JWT."
       onClose={closeSetup}
       width={560}
       footer={
@@ -47,12 +71,19 @@ function ProxySettings() {
       )}
 
       <div className="agent-form">
-        <Row label="Provider" value={status?.provider ?? 'deepseek'} />
-        <Row label="Model" value={status?.model ?? 'deepseek-flash'} />
-        <Row
-          label="Proxy URL"
-          value={status?.proxyUrl ?? '/api/deepseek/chat/completions'}
-        />
+        <Row label="Engine" value={engine} />
+        <Row label="Provider" value={provider} />
+        <Row label="Model" value={model} />
+        <Row label="Proxy URL" value={proxyUrl} />
+        {engine === 'pi' ? (
+          <>
+            <Row label="Harness" value={status?.pi?.harness ?? 'pi-agent-core'} />
+            <Row
+              label="Thinking"
+              value={status?.pi?.thinkingLevel ?? 'medium'}
+            />
+          </>
+        ) : null}
         <Row label="Proxy auth" value="Forge JWT · Authorization: Bearer …" />
         <Row label="Credential source" value={status?.keySource ?? 'not configured'} />
         <Row label="Project files" value="OPFS · sandbox/<ide>/projects/<project>" />

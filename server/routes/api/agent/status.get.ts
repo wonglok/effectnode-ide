@@ -1,5 +1,6 @@
 import { defineEventHandler } from 'h3';
 import { CLAUDE_AGENT, CLAUDE_ANTHROPIC_UPSTREAM } from '../../../../shared/claude';
+import { PI_AGENT } from '../../../../shared/pi';
 import type { AgentStatusResponse } from '../../../../shared/types';
 import { authGuard } from '../../../utils/auth';
 
@@ -48,6 +49,18 @@ export default defineEventHandler(async (event) => {
         process.env.DEEPSEEK_ANTHROPIC_BASE_URL?.trim() ||
         CLAUDE_ANTHROPIC_UPSTREAM,
       effort: CLAUDE_AGENT.effort,
+    },
+    pi: {
+      configured: Boolean(
+        process.env.DEEPSEEK_API_KEY?.trim() ||
+          process.env.AGENT_API_KEY?.trim()
+      ),
+      provider: PI_AGENT.provider,
+      api: PI_AGENT.api,
+      harness: PI_AGENT.harness,
+      model: PI_AGENT.model,
+      thinkingLevel: PI_AGENT.thinkingLevel,
+      proxyUrl: PI_AGENT.proxyUrl,
     },
   };
 });

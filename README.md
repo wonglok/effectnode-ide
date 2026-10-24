@@ -115,11 +115,12 @@ Keyboard shortcuts: `⌘B` explorer · `⌘J` panel · `⌘⇧A` focus agent cha
 
 The agent runs **in this tab**. The browser owns the conversation, the tool
 loop, and every file operation; the only thing that leaves the tab is the model
-request, sent to a same-origin REST proxy. Two frontend loops share the same
-tools, thinking log, task plan, undo snapshot, and "Keep going" card:
+request, sent to a same-origin REST proxy. Three frontend harnesses share the
+same tools, thinking log, task plan, undo snapshot, and "Keep going" card:
 
 ```
-claude (default) ── Anthropic SDK ──▶ POST /api/anthropic/v1/messages (JWT)
+pi (default) ── pi-agent-core + pi-ai ──▶ POST /api/anthropic/v1/messages (JWT)
+claude ── Anthropic SDK ─────────────────▶ POST /api/anthropic/v1/messages (JWT)
                                              │
                                              ▼
                               https://api.deepseek.com/anthropic
@@ -154,10 +155,24 @@ It accepts the JWT as either `Authorization: Bearer` or `x-api-key`, allows only
 `v1/messages` and `v1/messages/count_tokens`, and never lets the caller choose
 the upstream URL.
 
+The **pi** engine (default) runs a browser build of Pi's coding-agent primitives:
+`@earendil-works/pi-agent-core` owns the Agent/session loop, tool execution,
+steering, and lifecycle events, while `@earendil-works/pi-ai` supplies the
+Anthropic Messages transport. The harness creates a session from the persisted
+transcript, subscribes to `message_update` / `tool_execution_*` / `agent_end`
+events, and maps them into the same transcript UI. It uses the same tool
+functions and JWT proxy as the other engines.
+
+The published `@earendil-works/pi-coding-agent` SDK itself is Node/Bun-only:
+`createAgentSession()` pulls in `node:fs`, file-backed JSONL sessions, and
+native tool processes. Forge uses the browser-safe Pi packages behind the same
+session shape (`subscribe`, `prompt`/`continue`, `abort`, `dispose`) so the
+coding-agent workflow stays in the frontend without moving the loop server-side.
+
 The **deepseek** engine is the original frontend loop against the
 OpenAI-compatible proxy (`server/routes/api/deepseek/chat/completions.post.ts`).
-Switch engines with the `claude` / `deepseek` pills in the agent strip; the
-choice persists in `localStorage`.
+Switch engines with the `claude` / `deepseek` / `pi` pills in the agent strip;
+the choice persists in `localStorage`.
 
 > Why not `@anthropic-ai/claude-agent-sdk`? Its `query()` spawns the Claude Code
 > native binary, which is Node-only; the package's `/browser` entry only attaches
@@ -170,7 +185,8 @@ The shared tool set is `read_file`, `write_file`, `replace_in_file`,
 
 Each turn:
 
-1. The store sends the system prompt, conversation, and tool schemas to the proxy.
+1. The selected harness sends the system prompt, conversation, and tool schemas
+   to the proxy (Pi does this through pi-ai's Anthropic transport).
 2. Content streams into the assistant bubble while thinking deltas stream into a
    fixed-height, auto-scrolling **Thinking log** above it.
 3. Tool calls are executed in order against the almostnode `VirtualFS`.

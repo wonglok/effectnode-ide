@@ -296,7 +296,12 @@ export function parseAgentState(raw: string | null): PersistedAgentState | null 
     version: AGENT_STATE_VERSION,
     savedAt:
       typeof parsed.savedAt === 'string' ? parsed.savedAt : new Date(0).toISOString(),
-    engine: parsed.engine === 'deepseek' ? 'deepseek' : 'claude',
+    engine:
+      parsed.engine === 'claude' ||
+      parsed.engine === 'deepseek' ||
+      parsed.engine === 'pi'
+        ? parsed.engine
+        : 'pi',
     messages: normalizeMessages(parsed.messages),
     history: normalizeHistory(parsed.history),
     todos: normalizeTodos(parsed.todos),
