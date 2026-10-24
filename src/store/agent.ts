@@ -1,85 +1,97 @@
-import { create } from 'zustand';
+import { create } from "zustand";
 import type {
   AgentChatMessage,
   AgentEngine,
   AgentStatusResponse,
   AgentTodoItem,
   AgentTodoStatus,
-} from '../../shared/types';
-import { fetchAgentStatus, streamAgentChat } from '@/lib/agent-client';
+} from "../../shared/types";
+import { fetchAgentStatus, streamAgentChat } from "@/lib/agent-client";
 import {
   readPersistedAgentState,
   serializeAgentState,
   writePersistedAgentState,
-} from '@/lib/agent-state';
-import { streamClaudeChat } from '@/lib/claude-client';
-import { autoCompactCharBudget } from '@/lib/claude-config';
-import { getBoundProjectId } from '@/lib/opfs';
+} from "@/lib/agent-state";
+import { streamClaudeChat } from "@/lib/claude-client";
+import { autoCompactCharBudget } from "@/lib/claude-config";
+import { getBoundProjectId } from "@/lib/opfs";
 import {
   AGENT_TOOLS,
   buildAgentSystemPrompt,
   describeToolCall,
   executeAgentTool,
-} from '@/lib/agent-tools';
-import { playCompletionChime, primeCompletionAudio } from '@/lib/completion-chime';
-import { runtime } from '@/lib/runtime';
-import { useUiStore } from './ui';
-import { useWorkspaceStore } from './workspace';
+} from "@/lib/agent-tools";
+import {
+  playCompletionChime,
+  primeCompletionAudio,
+} from "@/lib/completion-chime";
+import { runtime } from "@/lib/runtime";
+import { useUiStore } from "./ui";
+import { useWorkspaceStore } from "./workspace";
 
 const MAX_STEPS = 100;
 const MAX_HISTORY_MESSAGES = 40;
-const ENGINE_STORAGE_KEY = 'forge.agent.engine';
+const ENGINE_STORAGE_KEY = "forge.agent.engine";
+const EMPTY_RETRY_SECONDS = 3;
+const EMPTY_RETRY_PROMPT = "keep going";
 
 /** The frontend Claude agent is the default; the browser DeepSeek loop stays
  * available as a fallback and for the existing OpenAI-compatible proxy. */
 function loadEngine(): AgentEngine {
-  if (typeof window === 'undefined') return 'claude';
+  if (typeof window === "undefined") return "claude";
   try {
-    return window.localStorage.getItem(ENGINE_STORAGE_KEY) === 'deepseek'
-      ? 'deepseek'
-      : 'claude';
+    return window.localStorage.getItem(ENGINE_STORAGE_KEY) === "deepseek"
+      ? "deepseek"
+      : "claude";
   } catch {
-    return 'claude';
+    return "claude";
   }
 }
 
 const TODO_STATUSES = new Set<AgentTodoStatus>([
-  'pending',
-  'in_progress',
-  'completed',
+  "pending",
+  "in_progress",
+  "completed",
 ]);
 
-export type AgentRunStatus = 'idle' | 'running';
+export type AgentRunStatus = "idle" | "running";
 
 export interface AgentToolEvent {
   name: string;
   summary: string;
   detail?: string;
   path?: string;
-  status: 'running' | 'ok' | 'error';
+  status: "running" | "ok" | "error";
 }
 
 export type AgentMessage =
-  | { id: string; role: 'user'; content: string; at: number }
+  | { id: string; role: "user"; content: string; at: number }
   | {
       id: string;
-      role: 'assistant';
+      role: "assistant";
       content: string;
       /** DeepSeek's separate `reasoning_content` stream for this step. */
       reasoning?: string;
       streaming: boolean;
       at: number;
     }
-  | { id: string; role: 'tool'; tool: AgentToolEvent; at: number }
-  | { id: string; role: 'error'; content: string; at: number }
-  | { id: string; role: 'notice'; content: string; at: number }
-  | { id: string; role: 'refresh'; at: number }
-  | { id: string; role: 'limit'; steps: number; at: number };
+  | { id: string; role: "tool"; tool: AgentToolEvent; at: number }
+  | { id: string; role: "error"; content: string; at: number }
+  | { id: string; role: "notice"; content: string; at: number }
+  | { id: string; role: "refresh"; at: number }
+  | { id: string; role: "limit"; steps: number; at: number };
 
 export interface AgentQueueItem {
   id: string;
   text: string;
   at: number;
+}
+
+/** Transient countdown shown beside an empty-response notice. */
+export interface AgentEmptyResponseRetry {
+  messageId: string;
+  secondsLeft: number;
+  status: "countdown" | "sent" | "cancelled";
 }
 
 export interface AgentState {
@@ -98,6 +110,8 @@ export interface AgentState {
   /** Prompts scheduled while the current turn is running. */
   queue: AgentQueueItem[];
   error: string | null;
+  /** Auto-retry prompt scheduled after the model answers with nothing. */
+  emptyResponseRetry: AgentEmptyResponseRetry | null;
   undoSnapshot: Record<string, string> | null;
   undoAvailable: boolean;
 
@@ -111,6 +125,8 @@ export interface AgentState {
   resumeQueue: () => Promise<void>;
   removeQueued: (id: string) => void;
   clearQueue: () => void;
+  /** Stop the pending 3-second retry without sending anything. */
+  cancelEmptyResponseRetry: () => void;
   stop: () => void;
   clear: () => void;
   restoreLastRun: () => Promise<void>;
@@ -127,7 +143,7 @@ let queueProcessing = false;
 let persistEnabled = false;
 let persistTimer: ReturnType<typeof setTimeout> | null = null;
 
-type RunOutcome = 'complete' | 'limit' | 'stopped' | 'error';
+type RunOutcome = "complete" | "limit" | "stopped" | "error";
 
 function clearPersistTimer(): void {
   if (persistTimer === null) return;
@@ -136,46 +152,52 @@ function clearPersistTimer(): void {
 }
 
 function isConfigured(state: AgentState): boolean {
-  return state.engine === 'claude'
+  return state.engine === "claude"
     ? Boolean(state.status?.claude?.configured)
     : Boolean(state.status?.configured);
 }
 
 function makeId(prefix: string): string {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return `${prefix}_${crypto.randomUUID()}`;
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto)
+    return `${prefix}_${crypto.randomUUID()}`;
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 }
 
 function messageChars(message: AgentChatMessage): number {
   return (
-    (message.content ?? '').length +
-    (message.thinking ?? '').length +
+    (message.content ?? "").length +
+    (message.thinking ?? "").length +
     (message.tool_calls ?? []).reduce(
       (total, call) => total + call.function.arguments.length,
-      0
+      0,
     )
   );
 }
 
 function trimHistory(history: AgentChatMessage[]): AgentChatMessage[] {
   let slice = history.slice(-MAX_HISTORY_MESSAGES);
-  while (slice.length > 0 && slice[0].role === 'tool') slice.shift();
+  while (slice.length > 0 && slice[0].role === "tool") slice.shift();
 
   // CLAUDE_CODE_AUTO_COMPACT_WINDOW: drop the oldest turns once the transcript
   // grows past the configured budget (rough chars-per-token estimate).
-  let characters = slice.reduce((total, message) => total + messageChars(message), 0);
+  let characters = slice.reduce(
+    (total, message) => total + messageChars(message),
+    0,
+  );
   while (characters > autoCompactCharBudget() && slice.length > 1) {
     characters -= messageChars(slice[0]);
     slice.shift();
   }
-  while (slice.length > 0 && slice[0].role === 'tool') slice.shift();
+  while (slice.length > 0 && slice[0].role === "tool") slice.shift();
 
   return slice;
 }
 
 function finalizeStreaming(messages: AgentMessage[]): AgentMessage[] {
   return messages.map((message) =>
-    message.role === 'assistant' && message.streaming ? { ...message, streaming: false } : message
+    message.role === "assistant" && message.streaming
+      ? { ...message, streaming: false }
+      : message,
   );
 }
 
@@ -191,11 +213,15 @@ function parseTodos(rawArguments: string): AgentTodoItem[] | null {
 
   const todos: AgentTodoItem[] = [];
   for (const entry of raw) {
-    if (!entry || typeof entry !== 'object') continue;
+    if (!entry || typeof entry !== "object") continue;
     const content = (entry as { content?: unknown }).content;
     const status = (entry as { status?: unknown }).status;
-    if (typeof content !== 'string' || !content.trim()) continue;
-    if (typeof status !== 'string' || !TODO_STATUSES.has(status as AgentTodoStatus)) continue;
+    if (typeof content !== "string" || !content.trim()) continue;
+    if (
+      typeof status !== "string" ||
+      !TODO_STATUSES.has(status as AgentTodoStatus)
+    )
+      continue;
     todos.push({ content: content.trim(), status: status as AgentTodoStatus });
   }
   return todos;
@@ -204,7 +230,7 @@ function parseTodos(rawArguments: string): AgentTodoItem[] | null {
 function todoSummary(todos: AgentTodoItem[]): string {
   const count = (status: AgentTodoStatus) =>
     todos.filter((todo) => todo.status === status).length;
-  return `Updated todo list: ${count('pending')} pending, ${count('in_progress')} in progress, ${count('completed')} completed.`;
+  return `Updated todo list: ${count("pending")} pending, ${count("in_progress")} in progress, ${count("completed")} completed.`;
 }
 
 interface RunLoopOptions {
@@ -218,12 +244,88 @@ interface RunLoopOptions {
 
 export const useAgentStore = create<AgentState>((set, get) => {
   const addNotice = (content: string) => {
+    const id = makeId("notice");
     set((current) => ({
       messages: [
         ...current.messages,
-        { id: makeId('notice'), role: 'notice', content, at: Date.now() },
+        { id, role: "notice", content, at: Date.now() },
       ],
     }));
+    return id;
+  };
+
+  let emptyRetryTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const clearEmptyRetryTimer = () => {
+    if (emptyRetryTimer === null) return;
+    clearTimeout(emptyRetryTimer);
+    emptyRetryTimer = null;
+  };
+
+  const sendEmptyRetry = () => {
+    const current = get().emptyResponseRetry;
+    if (!current || current.status !== "countdown") return;
+    clearEmptyRetryTimer();
+
+    if (!isConfigured(get())) {
+      set({
+        emptyResponseRetry: { ...current, secondsLeft: 0, status: "cancelled" },
+        setupOpen: true,
+      });
+      return;
+    }
+
+    set({
+      emptyResponseRetry: { ...current, secondsLeft: 0, status: "sent" },
+    });
+    void get().send(EMPTY_RETRY_PROMPT);
+  };
+
+  const scheduleEmptyResponseRetry = (messageId: string) => {
+    clearEmptyRetryTimer();
+    set({
+      emptyResponseRetry: {
+        messageId,
+        secondsLeft: EMPTY_RETRY_SECONDS,
+        status: "countdown",
+      },
+    });
+
+    const tick = () => {
+      const current = get().emptyResponseRetry;
+      if (
+        !current ||
+        current.messageId !== messageId ||
+        current.status !== "countdown"
+      ) {
+        clearEmptyRetryTimer();
+        return;
+      }
+
+      if (current.secondsLeft <= 1) {
+        sendEmptyRetry();
+        return;
+      }
+
+      set({
+        emptyResponseRetry: {
+          ...current,
+          secondsLeft: current.secondsLeft - 1,
+        },
+      });
+      emptyRetryTimer = setTimeout(tick, 1000);
+    };
+
+    emptyRetryTimer = setTimeout(tick, 1000);
+  };
+
+  const cancelEmptyResponseRetry = () => {
+    const current = get().emptyResponseRetry;
+    if (!current || current.status !== "countdown") return;
+    clearEmptyRetryTimer();
+    set({
+      emptyResponseRetry: { ...current, secondsLeft: 0, status: "cancelled" },
+    });
   };
 
   const runLoop = async ({
@@ -240,33 +342,34 @@ export const useAgentStore = create<AgentState>((set, get) => {
 
     try {
       for (let step = 0; step < MAX_STEPS; step += 1) {
-        if (controller.signal.aborted || runId !== runSequence) return 'stopped';
+        if (controller.signal.aborted || runId !== runSequence)
+          return "stopped";
         set({ runStatusText: `Thinking · step ${step + 1}` });
 
-        const assistantDisplayId = makeId('assistant');
+        const assistantDisplayId = makeId("assistant");
         set((current) => ({
           messages: [
             ...current.messages,
             {
               id: assistantDisplayId,
-              role: 'assistant',
-              content: '',
-              reasoning: '',
+              role: "assistant",
+              content: "",
+              reasoning: "",
               streaming: true,
               at: Date.now(),
             },
           ],
         }));
 
-        let stepReasoning = '';
+        let stepReasoning = "";
 
         const onDelta = (chunk: string) => {
           if (runId !== runSequence) return;
           set((current) => ({
             messages: current.messages.map((message) =>
-              message.role === 'assistant' && message.id === assistantDisplayId
+              message.role === "assistant" && message.id === assistantDisplayId
                 ? { ...message, content: message.content + chunk }
-                : message
+                : message,
             ),
           }));
         };
@@ -276,16 +379,16 @@ export const useAgentStore = create<AgentState>((set, get) => {
           if (runId !== runSequence) return;
           set((current) => ({
             messages: current.messages.map((message) =>
-              message.role === 'assistant' && message.id === assistantDisplayId
-                ? { ...message, reasoning: (message.reasoning ?? '') + chunk }
-                : message
+              message.role === "assistant" && message.id === assistantDisplayId
+                ? { ...message, reasoning: (message.reasoning ?? "") + chunk }
+                : message,
             ),
           }));
         };
 
         const engine = get().engine;
         const result =
-          engine === 'claude'
+          engine === "claude"
             ? await streamClaudeChat({
                 system: buildAgentSystemPrompt(),
                 messages: trimHistory(history),
@@ -296,7 +399,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
               })
             : await streamAgentChat({
                 messages: [
-                  { role: 'system', content: buildAgentSystemPrompt() },
+                  { role: "system", content: buildAgentSystemPrompt() },
                   ...trimHistory(history),
                 ],
                 tools: AGENT_TOOLS,
@@ -305,16 +408,24 @@ export const useAgentStore = create<AgentState>((set, get) => {
                 onReasoning,
               });
 
-        if (runId !== runSequence) return 'stopped';
+        if (runId !== runSequence) return "stopped";
 
         const toolCalls = result.toolCalls;
         const hasTools = toolCalls.length > 0;
 
         set((current) => ({
           messages: current.messages.flatMap((message) => {
-            if (message.role !== 'assistant' || message.id !== assistantDisplayId) return [message];
+            if (
+              message.role !== "assistant" ||
+              message.id !== assistantDisplayId
+            )
+              return [message];
             // Keep a tool-only step when it produced a thinking log.
-            if (!result.content.trim() && !(message.reasoning ?? '').trim() && hasTools) {
+            if (
+              !result.content.trim() &&
+              !(message.reasoning ?? "").trim() &&
+              hasTools
+            ) {
               return [];
             }
             return [{ ...message, content: result.content, streaming: false }];
@@ -322,11 +433,11 @@ export const useAgentStore = create<AgentState>((set, get) => {
         }));
 
         const assistantMessage: AgentChatMessage = {
-          role: 'assistant',
+          role: "assistant",
           content: result.content || null,
         };
         // Claude requires thinking blocks to be replayed alongside tool calls.
-        if (engine === 'claude') {
+        if (engine === "claude") {
           const thinking = (result.reasoning ?? stepReasoning).trim();
           if (thinking) {
             assistantMessage.thinking = thinking;
@@ -340,7 +451,10 @@ export const useAgentStore = create<AgentState>((set, get) => {
         set({ history });
 
         if (!hasTools) {
-          if (!result.content.trim()) addNotice('The model returned an empty response.');
+          if (!result.content.trim()) {
+            const noticeId = addNotice("The model returned an empty response.");
+            scheduleEmptyResponseRetry(noticeId);
+          }
           break;
         }
 
@@ -348,21 +462,26 @@ export const useAgentStore = create<AgentState>((set, get) => {
           if (controller.signal.aborted || runId !== runSequence) break;
 
           // The plan has its own panel; keep it out of the tool-card stream.
-          if (call.function.name === 'todo_write') {
+          if (call.function.name === "todo_write") {
             const todos = parseTodos(call.function.arguments);
             if (todos) {
-              set({ todos, runStatusText: 'Updating the task plan…' });
+              set({ todos, runStatusText: "Updating the task plan…" });
               history = [
                 ...history,
-                { role: 'tool', tool_call_id: call.id, content: todoSummary(todos) },
+                {
+                  role: "tool",
+                  tool_call_id: call.id,
+                  content: todoSummary(todos),
+                },
               ];
             } else {
               history = [
                 ...history,
                 {
-                  role: 'tool',
+                  role: "tool",
                   tool_call_id: call.id,
-                  content: 'Error: todos must be an array of { content, status } items.',
+                  content:
+                    "Error: todos must be an array of { content, status } items.",
                 },
               ];
             }
@@ -371,7 +490,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
           }
 
           const preview = describeToolCall(call);
-          const displayId = makeId('tool');
+          const displayId = makeId("tool");
           set({ runStatusText: preview.summary });
 
           set((current) => ({
@@ -379,25 +498,28 @@ export const useAgentStore = create<AgentState>((set, get) => {
               ...current.messages,
               {
                 id: displayId,
-                role: 'tool',
+                role: "tool",
                 at: Date.now(),
                 tool: {
                   name: preview.name,
                   summary: preview.summary,
                   path: preview.path,
-                  status: 'running',
+                  status: "running",
                 },
               },
             ],
           }));
 
-          const outcome = await executeAgentTool(preview.name, call.function.arguments);
-          if (runId !== runSequence) return 'stopped';
+          const outcome = await executeAgentTool(
+            preview.name,
+            call.function.arguments,
+          );
+          if (runId !== runSequence) return "stopped";
           changed = changed || outcome.changed;
 
           set((current) => ({
             messages: current.messages.map((message) =>
-              message.role === 'tool' && message.id === displayId
+              message.role === "tool" && message.id === displayId
                 ? {
                     ...message,
                     tool: {
@@ -408,13 +530,13 @@ export const useAgentStore = create<AgentState>((set, get) => {
                       status: outcome.status,
                     },
                   }
-                : message
+                : message,
             ),
           }));
 
           history = [
             ...history,
-            { role: 'tool', tool_call_id: call.id, content: outcome.output },
+            { role: "tool", tool_call_id: call.id, content: outcome.output },
           ];
           set({ history });
         }
@@ -423,58 +545,63 @@ export const useAgentStore = create<AgentState>((set, get) => {
 
         if (step === MAX_STEPS - 1) {
           set((current) => ({
-            runStatus: 'idle',
+            runStatus: "idle",
             runStatusText: null,
             messages: [
               ...finalizeStreaming(current.messages),
-              { id: makeId('limit'), role: 'limit', steps: MAX_STEPS, at: Date.now() },
+              {
+                id: makeId("limit"),
+                role: "limit",
+                steps: MAX_STEPS,
+                at: Date.now(),
+              },
             ],
             ...undoPatch(),
           }));
-          runtime.log('warn', `Agent stopped at the ${MAX_STEPS}-step limit`);
-          return 'limit';
+          runtime.log("warn", `Agent stopped at the ${MAX_STEPS}-step limit`);
+          return "limit";
         }
       }
 
-      if (runId !== runSequence) return 'stopped';
+      if (runId !== runSequence) return "stopped";
 
       if (controller.signal.aborted) {
         set({
-          runStatus: 'idle',
+          runStatus: "idle",
           runStatusText: null,
           history: baseHistory,
           messages: finalizeStreaming(get().messages),
           ...undoPatch(),
         });
-        addNotice('Stopped.');
-        return 'stopped';
+        addNotice("Stopped.");
+        return "stopped";
       }
 
       set((current) => ({
-        runStatus: 'idle',
+        runStatus: "idle",
         runStatusText: null,
         messages: [
           ...finalizeStreaming(current.messages),
-          { id: makeId('refresh'), role: 'refresh', at: Date.now() },
+          { id: makeId("refresh"), role: "refresh", at: Date.now() },
         ],
         ...undoPatch(),
       }));
       playCompletionChime();
-      return 'complete';
+      return "complete";
     } catch (error) {
-      if (runId !== runSequence) return 'stopped';
+      if (runId !== runSequence) return "stopped";
 
       const aborted =
         controller.signal.aborted ||
-        (error instanceof DOMException && error.name === 'AbortError');
+        (error instanceof DOMException && error.name === "AbortError");
       const message = aborted
-        ? 'Stopped.'
+        ? "Stopped."
         : error instanceof Error
           ? error.message
           : String(error);
 
       set({
-        runStatus: 'idle',
+        runStatus: "idle",
         runStatusText: null,
         history: baseHistory,
         error: aborted ? null : message,
@@ -483,17 +610,22 @@ export const useAgentStore = create<AgentState>((set, get) => {
       });
 
       if (aborted) {
-        addNotice('Stopped.');
+        addNotice("Stopped.");
       } else {
         set((current) => ({
           messages: [
             ...current.messages,
-            { id: makeId('error'), role: 'error', content: message, at: Date.now() },
+            {
+              id: makeId("error"),
+              role: "error",
+              content: message,
+              at: Date.now(),
+            },
           ],
         }));
-        runtime.log('error', `Agent: ${message}`);
+        runtime.log("error", `Agent: ${message}`);
       }
-      return aborted ? 'stopped' : 'error';
+      return aborted ? "stopped" : "error";
     } finally {
       if (activeRun?.id === runId) activeRun = null;
     }
@@ -512,17 +644,17 @@ export const useAgentStore = create<AgentState>((set, get) => {
     const runId = ++runSequence;
     activeRun = { id: runId, controller };
 
-    const userMessage: AgentChatMessage = { role: 'user', content: text };
+    const userMessage: AgentChatMessage = { role: "user", content: text };
     const baseHistory = [...state.history, userMessage];
 
     set({
-      runStatus: 'running',
-      runStatusText: 'Thinking…',
+      runStatus: "running",
+      runStatusText: "Thinking…",
       error: null,
       history: baseHistory,
       messages: [
-        ...state.messages.filter((message) => message.role !== 'limit'),
-        { id: makeId('user'), role: 'user', content: text, at: Date.now() },
+        ...state.messages.filter((message) => message.role !== "limit"),
+        { id: makeId("user"), role: "user", content: text, at: Date.now() },
       ],
     });
 
@@ -536,7 +668,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
     try {
       while (true) {
         const state = get();
-        if (state.runStatus === 'running') break;
+        if (state.runStatus === "running") break;
         const next = state.queue[0];
         if (!next) break;
 
@@ -544,7 +676,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
           queue: current.queue.filter((item) => item.id !== next.id),
         }));
         const outcome = await startPrompt(next.text);
-        if (outcome !== 'complete') break;
+        if (outcome !== "complete") break;
       }
     } finally {
       queueProcessing = false;
@@ -556,13 +688,14 @@ export const useAgentStore = create<AgentState>((set, get) => {
     statusLoaded: false,
     setupOpen: false,
     engine: loadEngine(),
-    runStatus: 'idle',
+    runStatus: "idle",
     runStatusText: null,
     messages: [],
     todos: [],
     history: [],
     queue: [],
     error: null,
+    emptyResponseRetry: null,
     undoSnapshot: null,
     undoAvailable: false,
 
@@ -574,8 +707,8 @@ export const useAgentStore = create<AgentState>((set, get) => {
         } catch (error) {
           set({ statusLoaded: true });
           runtime.log(
-            'warn',
-            `Agent status unavailable: ${error instanceof Error ? error.message : String(error)}`
+            "warn",
+            `Agent status unavailable: ${error instanceof Error ? error.message : String(error)}`,
           );
         }
       })();
@@ -586,7 +719,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
     closeSetup: () => set({ setupOpen: false }),
 
     setEngine: (engine) => {
-      if (get().runStatus === 'running' || get().engine === engine) return;
+      if (get().runStatus === "running" || get().engine === engine) return;
       try {
         window.localStorage.setItem(ENGINE_STORAGE_KEY, engine);
       } catch {
@@ -610,7 +743,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
       set((current) => ({
         queue: [
           ...current.queue,
-          { id: makeId('prompt'), text, at: Date.now() },
+          { id: makeId("prompt"), text, at: Date.now() },
         ],
       }));
 
@@ -619,7 +752,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
 
     keepGoing: async () => {
       const state = get();
-      if (state.runStatus === 'running' || state.history.length === 0) return;
+      if (state.runStatus === "running" || state.history.length === 0) return;
 
       primeCompletionAudio();
 
@@ -629,10 +762,12 @@ export const useAgentStore = create<AgentState>((set, get) => {
       activeRun = { id: runId, controller };
 
       set((current) => ({
-        runStatus: 'running',
-        runStatusText: 'Continuing…',
+        runStatus: "running",
+        runStatusText: "Continuing…",
         error: null,
-        messages: current.messages.filter((message) => message.role !== 'limit'),
+        messages: current.messages.filter(
+          (message) => message.role !== "limit",
+        ),
       }));
 
       const outcome = await runLoop({
@@ -641,7 +776,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
         controller,
         runId,
       });
-      if (outcome === 'complete') await drainQueue();
+      if (outcome === "complete") await drainQueue();
     },
 
     resumeQueue: async () => {
@@ -656,6 +791,8 @@ export const useAgentStore = create<AgentState>((set, get) => {
 
     clearQueue: () => set({ queue: [] }),
 
+    cancelEmptyResponseRetry,
+
     stop: () => {
       activeRun?.controller.abort();
     },
@@ -664,14 +801,16 @@ export const useAgentStore = create<AgentState>((set, get) => {
       activeRun?.controller.abort();
       activeRun = null;
       runSequence += 1;
+      clearEmptyRetryTimer();
       set({
-        runStatus: 'idle',
+        runStatus: "idle",
         runStatusText: null,
         messages: [],
         todos: [],
         history: [],
         queue: [],
         error: null,
+        emptyResponseRetry: null,
         undoSnapshot: null,
         undoAvailable: false,
       });
@@ -686,6 +825,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
       activeRun?.controller.abort();
       activeRun = null;
       runSequence += 1;
+      clearEmptyRetryTimer();
 
       try {
         await runtime.replaceProject(snapshot);
@@ -693,25 +833,27 @@ export const useAgentStore = create<AgentState>((set, get) => {
         set((current) => ({
           undoSnapshot: null,
           undoAvailable: false,
-          runStatus: 'idle',
+          runStatus: "idle",
           runStatusText: null,
+          emptyResponseRetry: null,
           history: [],
           messages: [
             ...current.messages,
             {
-              id: makeId('notice'),
-              role: 'notice',
-              content: 'Restored the project to its state before the last agent run.',
+              id: makeId("notice"),
+              role: "notice",
+              content:
+                "Restored the project to its state before the last agent run.",
               at: Date.now(),
             },
           ],
         }));
-        runtime.log('success', 'Agent changes reverted');
-        useUiStore.getState().toast('Agent changes reverted');
+        runtime.log("success", "Agent changes reverted");
+        useUiStore.getState().toast("Agent changes reverted");
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        runtime.log('error', `Could not revert agent changes: ${message}`);
-        useUiStore.getState().toast('Could not revert agent changes', 'error');
+        runtime.log("error", `Could not revert agent changes: ${message}`);
+        useUiStore.getState().toast("Could not revert agent changes", "error");
       }
     },
 
@@ -721,6 +863,8 @@ export const useAgentStore = create<AgentState>((set, get) => {
       activeRun?.controller.abort();
       activeRun = null;
       runSequence += 1;
+      clearEmptyRetryTimer();
+      set({ emptyResponseRetry: null });
 
       const projectId = getBoundProjectId();
       let persisted: Awaited<ReturnType<typeof readPersistedAgentState>> = null;
@@ -729,10 +873,10 @@ export const useAgentStore = create<AgentState>((set, get) => {
           persisted = await readPersistedAgentState(projectId);
         } catch (error) {
           runtime.log(
-            'warn',
+            "warn",
             `Could not read the saved agent state: ${
               error instanceof Error ? error.message : String(error)
-            }`
+            }`,
           );
         }
       }
@@ -751,7 +895,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
           queue: persisted.queue,
           undoSnapshot: persisted.undoSnapshot,
           undoAvailable: persisted.undoAvailable,
-          runStatus: 'idle',
+          runStatus: "idle",
           runStatusText: null,
           error: null,
           setupOpen: false,
@@ -764,7 +908,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
           queue: [],
           undoSnapshot: null,
           undoAvailable: false,
-          runStatus: 'idle',
+          runStatus: "idle",
           runStatusText: null,
           error: null,
           setupOpen: false,
@@ -780,14 +924,16 @@ export const useAgentStore = create<AgentState>((set, get) => {
       activeRun?.controller.abort();
       activeRun = null;
       runSequence += 1;
+      clearEmptyRetryTimer();
       set({
         messages: [],
         history: [],
         todos: [],
         queue: [],
+        emptyResponseRetry: null,
         undoSnapshot: null,
         undoAvailable: false,
-        runStatus: 'idle',
+        runStatus: "idle",
         runStatusText: null,
         error: null,
         setupOpen: false,
@@ -803,13 +949,16 @@ export function flushAgentStatePersistence(): void {
   const projectId = getBoundProjectId();
   if (!projectId) return;
   try {
-    writePersistedAgentState(projectId, serializeAgentState(useAgentStore.getState()));
+    writePersistedAgentState(
+      projectId,
+      serializeAgentState(useAgentStore.getState()),
+    );
   } catch (error) {
     runtime.log(
-      'warn',
+      "warn",
       `Could not save the agent state: ${
         error instanceof Error ? error.message : String(error)
-      }`
+      }`,
     );
   }
 }
@@ -831,7 +980,7 @@ export function resumeAgentStatePersistence(): void {
 }
 
 function scheduleAgentStatePersistence(): void {
-  if (!persistEnabled || typeof window === 'undefined') return;
+  if (!persistEnabled || typeof window === "undefined") return;
   clearPersistTimer();
   persistTimer = setTimeout(() => {
     persistTimer = null;
@@ -855,10 +1004,10 @@ useAgentStore.subscribe((state, previous) => {
   scheduleAgentStatePersistence();
 });
 
-if (typeof window !== 'undefined') {
-  window.addEventListener('pagehide', flushAgentStatePersistence);
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') flushAgentStatePersistence();
+if (typeof window !== "undefined") {
+  window.addEventListener("pagehide", flushAgentStatePersistence);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flushAgentStatePersistence();
   });
 }
 

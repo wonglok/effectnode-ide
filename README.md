@@ -164,6 +164,10 @@ choice persists in `localStorage`.
 > to Anthropic's remote-session service. Running it here would move the loop back
 > to the server, so the frontend uses the official Anthropic client instead.
 
+The shared tool set is `read_file`, `write_file`, `replace_in_file`,
+`list_files`, `grep` (JavaScript-regex content search), `run_bash`, and
+`todo_write`.
+
 Each turn:
 
 1. The store sends the system prompt, conversation, and tool schemas to the proxy.
@@ -176,6 +180,9 @@ Each turn:
    the limit is reached, a **Keep going** card resumes the loop from the saved
    history without a new user message.
 7. The pre-turn snapshot powers **Undo run**; a chime marks completion.
+8. If the model ends with an empty response, a 3-second countdown sends
+   `keep going`. **Cancel** stops the automatic retry; the button disables once
+   the prompt is sent or the retry is cancelled.
 
 The chat lives in its **own column beside the editor**: drag the divider between
 them to resize it, or press `⌘⇧A` to focus the composer. Tool calls appear as

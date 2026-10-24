@@ -71,3 +71,7 @@ and external coding agents should follow these rules when changing the project.
 - Check the result in the Forge preview: a live WebGPU canvas and a clean
   console are the acceptance criteria.
 - Write scratch files under `.claude/temp`, never in the project tree.
+
+## Must follow guidelines:
+
+Must translate glsl to TSL for threejs content

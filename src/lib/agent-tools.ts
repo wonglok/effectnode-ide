@@ -2,13 +2,19 @@ import type { AgentToolCall, AgentToolDefinition } from "../../shared/types";
 import { useUiStore } from "@/store/ui";
 import { useWorkspaceStore } from "@/store/workspace";
 import { buildFileTree, flattenLeaves } from "./file-tree";
-import { joinPath, normalizePath } from "./paths";
+import { basename, joinPath, normalizePath } from "./paths";
 import { runtime } from "./runtime";
 import { runShellCommand } from "./shell";
 
 const MAX_READ_CHARS = 40_000;
 const MAX_WRITE_CHARS = 60_000;
 const MAX_BASH_CHARS = 6_000;
+const DEFAULT_GREP_RESULTS = 100;
+const MAX_GREP_RESULTS = 200;
+const MAX_GREP_OUTPUT_CHARS = 20_000;
+const MAX_GREP_LINE_CHARS = 300;
+const MAX_GREP_PATTERN_CHARS = 200;
+const MAX_GREP_FILE_CHARS = 500_000;
 const READ_ONLY_COMMANDS = new Set([
   "ls",
   "cat",
@@ -211,6 +217,170 @@ function listFilesTool(args: Record<string, unknown>): AgentToolOutcome {
   };
 }
 
+/** `*` matches within a path segment; `**` crosses directories. */
+function globToRegExp(glob: string): RegExp {
+  const escaped = glob.replace(/[.+^${}()|[\]\\]/g, "\\$&");
+  const source = escaped
+    .replace(/\*\*\//g, "\u0000")
+    .replace(/\*\*/g, "\u0001")
+    .replace(/\*/g, "[^/]*")
+    .replace(/\?/g, "[^/]")
+    .replace(/\u0000/g, "(?:.*/)?")
+    .replace(/\u0001/g, ".*");
+  return new RegExp(`^${source}$`, "i");
+}
+
+function grepTool(args: Record<string, unknown>): AgentToolOutcome {
+  const rawPattern = typeof args.pattern === "string" ? args.pattern : "";
+  if (!rawPattern.trim()) {
+    return fail("Grep failed", "pattern must be a non-empty string");
+  }
+  if (rawPattern.length > MAX_GREP_PATTERN_CHARS) {
+    return fail(
+      "Grep failed",
+      `pattern is too long (max ${MAX_GREP_PATTERN_CHARS} characters)`,
+    );
+  }
+
+  const resolved = resolvePathArg(args.path ?? "/", true);
+  if ("error" in resolved) return fail("Grep failed", resolved.error);
+  const { path } = resolved;
+
+  if (!runtime.exists(path)) {
+    return fail(`Grep ${path}`, `Path not found: ${path}`);
+  }
+
+  const caseSensitive = args.case_sensitive === true;
+  let matcher: RegExp;
+  try {
+    matcher = new RegExp(rawPattern, caseSensitive ? "" : "i");
+  } catch (error) {
+    return fail(
+      "Grep failed",
+      `Invalid regular expression: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+
+  let include: { matcher: RegExp; basenameOnly: boolean } | null = null;
+  if (
+    typeof args.include === "string" &&
+    args.include.trim() &&
+    args.include.trim() !== "*"
+  ) {
+    if (args.include.length > 200) {
+      return fail("Grep failed", "include glob is too long");
+    }
+    const glob = args.include.trim().replace(/^\/+/, "");
+    include = {
+      matcher: globToRegExp(glob),
+      basenameOnly: !glob.includes("/"),
+    };
+  }
+
+  const requested = args.max_results;
+  const maxResults =
+    typeof requested === "number" && Number.isFinite(requested)
+      ? Math.max(1, Math.min(MAX_GREP_RESULTS, Math.floor(requested)))
+      : DEFAULT_GREP_RESULTS;
+
+  let files: Array<[string, string]>;
+  if (runtime.isDirectory(path)) {
+    const prefix = path === "/" ? "/" : `${path}/`;
+    files = Object.entries(runtime.snapshot())
+      .filter(([file]) => file === path || file.startsWith(prefix))
+      .sort(([a], [b]) => a.localeCompare(b));
+  } else {
+    const content = runtime.readFile(path);
+    if (content === null) return fail(`Grep ${path}`, `File not found: ${path}`);
+    files = [[path, content]];
+  }
+
+  const matches: string[] = [];
+  const matchedFiles = new Set<string>();
+  let outputChars = 0;
+  let truncated = false;
+  let skippedLarge = 0;
+
+  scan: for (const [file, content] of files) {
+    if (content.length > MAX_GREP_FILE_CHARS) {
+      skippedLarge += 1;
+      continue;
+    }
+
+    if (include) {
+      const relative = file.replace(/^\/+/, "");
+      const target = include.basenameOnly ? basename(file) : relative;
+      if (!include.matcher.test(target)) continue;
+    }
+
+    const lines = content.split("\n");
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index];
+      if (!matcher.test(line)) continue;
+
+      const preview =
+        line.length > MAX_GREP_LINE_CHARS
+          ? `${line.slice(0, MAX_GREP_LINE_CHARS)}…`
+          : line;
+      const entry = `${file}:${index + 1}: ${preview.trimEnd()}`;
+
+      if (
+        matches.length >= maxResults ||
+        outputChars + entry.length + 1 > MAX_GREP_OUTPUT_CHARS
+      ) {
+        truncated = true;
+        break scan;
+      }
+
+      matches.push(entry);
+      matchedFiles.add(file);
+      outputChars += entry.length + 1;
+    }
+  }
+
+  const label =
+    rawPattern.length > 50 ? `${rawPattern.slice(0, 50)}…` : rawPattern;
+  const where = path === "/" ? "" : ` in ${path}`;
+
+  if (matches.length === 0) {
+    const skipped = skippedLarge
+      ? ` (${skippedLarge} file${skippedLarge === 1 ? "" : "s"} skipped as too large)`
+      : "";
+    return {
+      output: `No matches for /${rawPattern}/${where || " in the project"}${skipped}.`,
+      summary: `No matches for “${label}”${where}`,
+      detail: path,
+      status: "ok",
+      changed: false,
+      path,
+    };
+  }
+
+  const notes = [
+    truncated
+      ? `\n… [truncated at ${matches.length} matching lines]`
+      : "",
+    skippedLarge
+      ? `\n… [skipped ${skippedLarge} file${
+          skippedLarge === 1 ? "" : "s"
+        } larger than ${MAX_GREP_FILE_CHARS.toLocaleString()} chars]`
+      : "",
+  ].join("");
+
+  return {
+    output: matches.join("\n") + notes,
+    summary: `Grep “${label}”${where}`,
+    detail: `${matches.length}${truncated ? "+" : ""} matching line${
+      matches.length === 1 && !truncated ? "" : "s"
+    } · ${matchedFiles.size} file${matchedFiles.size === 1 ? "" : "s"}`,
+    status: "ok",
+    changed: false,
+    path,
+  };
+}
+
 async function runBashTool(
   args: Record<string, unknown>,
 ): Promise<AgentToolOutcome> {
@@ -331,6 +501,45 @@ export const AGENT_TOOLS: AgentToolDefinition[] = [
   {
     type: "function",
     function: {
+      name: "grep",
+      description:
+        "Search project file contents with a JavaScript regular expression. Returns matching lines as path:line:text. Use this to find symbols, imports, or usages before reading files.",
+      parameters: {
+        type: "object",
+        properties: {
+          pattern: {
+            type: "string",
+            description:
+              "JavaScript regular expression, e.g. \"useState|useEffect\"",
+          },
+          path: {
+            type: "string",
+            description:
+              "Absolute file or directory to search, e.g. /src (default /)",
+          },
+          include: {
+            type: "string",
+            description:
+              "Optional glob filter, e.g. *.tsx or src/**/*.ts",
+          },
+          case_sensitive: {
+            type: "boolean",
+            description: "Match case exactly (default false).",
+          },
+          max_results: {
+            type: "integer",
+            minimum: 1,
+            maximum: MAX_GREP_RESULTS,
+            description: `Maximum matching lines to return (default ${DEFAULT_GREP_RESULTS}, max ${MAX_GREP_RESULTS}).`,
+          },
+        },
+        required: ["pattern"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "run_bash",
       description:
         "Run a command in the in-browser virtual shell (ls, cat, pwd, tree, touch, mkdir, mv, cp, rm, echo). Output is returned.",
@@ -403,6 +612,8 @@ export async function executeAgentTool(
       return replaceInFileTool(args);
     case "list_files":
       return listFilesTool(args);
+    case "grep":
+      return grepTool(args);
     case "run_bash":
       return runBashTool(args);
     case "todo_write":
@@ -441,6 +652,17 @@ export function describeToolCall(call: AgentToolCall): ToolCallPreview {
       return { name, summary: `Edit ${path ?? "file"}`, path };
     case "list_files":
       return { name, summary: `List ${path ?? "/"}`, path };
+    case "grep": {
+      const pattern =
+        typeof args.pattern === "string" ? args.pattern : "pattern";
+      const label =
+        pattern.length > 40 ? `${pattern.slice(0, 40)}…` : pattern;
+      return {
+        name,
+        summary: `Grep “${label}”${path && path !== "/" ? ` in ${path}` : ""}`,
+        path,
+      };
+    }
     case "run_bash":
       return {
         name,
@@ -478,20 +700,21 @@ Tools:
 - write_file(path, content): create or overwrite a file; parent folders are created.
 - replace_in_file(path, old_text, new_text): replace the first exact occurrence. Prefer this for small edits.
 - list_files(path): list a directory.
+- grep(pattern, path?, include?, case_sensitive?, max_results?): search file contents with a JavaScript regex; returns path:line:text matches. Use this to locate symbols or usages across files.
 - run_bash(command): run a command in the virtual shell.
 - todo_write(todos): replace the visible task plan. The UI renders this list live.
 
 Rules:
 - Please read /AGENTS.md at the project root before planning or editing, and follow its project-specific instructions. If it is missing, continue with the rules below.
 - For work with more than one step, call todo_write first with the complete plan, mark the task you are working on in_progress, and mark each task completed as soon as it is done. Keep exactly one task in_progress unless the work is genuinely parallel.
-- Files are persisted in OPFS under sandbox/<sandbox-id>/projects/<project-id>/ and mirrored to the server when the user saves. Treat the virtual file system as the source of truth.
+- Files are persisted in OPFS under sandbox/<sandbox-id>/projects/<project-id>/. Treat the virtual file system as the source of truth.
 - Paths are absolute (start with /). Never touch node_modules.
 - Relative imports MUST include the file extension, e.g. import App from './App.tsx' and import './styles.css'. The in-browser server does not resolve extensionless imports.
 - React, Zustand, three, and Tailwind CSS ('@tailwindcss/browser', when mapped by the project) come from an import map. Do NOT import any other npm package and do not add dependencies; there is no npm install in the preview. Use Zustand for shared React state, and prefer Tailwind utilities for new UI. The starter's primary color is Tiffany Blue: use 'bg-primary', 'text-primary', or '--ef-primary' (#0abab5). Otherwise style with plain CSS in /src/styles.css or inline styles.
 - Keep /index.html as the entry; do not replace its module script or add external scripts.
 - Match the existing visual language. Make focused, working changes rather than large rewrites.
 - If you create a component, create the file and update the file that imports it in the same turn.
-- Run a read or list when you need to confirm the current state; do not guess file contents.
+- Use grep to find symbols or usages across files, then read only the relevant files. Do not guess file contents.
 - Finish with 1–3 short sentences describing what changed. No headings, no bullet lists unless necessary — the required planning Gantt chart is the exception.
 
 # react js

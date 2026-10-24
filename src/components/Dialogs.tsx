@@ -203,7 +203,7 @@ export function ShortcutsDialog() {
           </li>
           <li>
             <strong>Forge Agent</strong> calls the model through the authenticated Nitro proxy and applies
-            tool calls (read, write, edit, list, shell) to the same VFS, so its edits hot-reload too.
+            tool calls (read, write, edit, list, grep, shell) to the same VFS, so its edits hot-reload too.
           </li>
         </ul>
       </div>

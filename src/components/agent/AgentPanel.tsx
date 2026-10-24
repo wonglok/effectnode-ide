@@ -27,6 +27,7 @@ import type { AgentEngine } from "../../../shared/types";
 import {
   selectAgentConfigured,
   useAgentStore,
+  type AgentEmptyResponseRetry,
   type AgentToolEvent,
 } from "@/store/agent";
 import { useRuntimeStore } from "@/store/runtime";
@@ -422,12 +423,53 @@ function AgentLoader({
   );
 }
 
+function EmptyResponseRetryCard({
+  retry,
+  onCancel,
+}: {
+  retry: AgentEmptyResponseRetry;
+  onCancel: () => void;
+}) {
+  const counting = retry.status === "countdown";
+  const stateLabel =
+    retry.status === "countdown"
+      ? `Sending “keep going” in ${retry.secondsLeft}s…`
+      : retry.status === "sent"
+        ? "Sent “keep going” to the agent."
+        : "Automatic retry cancelled.";
+
+  return (
+    <div className={`agent-retry is-${retry.status}`} role="status" aria-live="polite">
+      <span className="agent-retry-icon">
+        <RefreshCw size={13} className={counting ? "spin" : undefined} />
+      </span>
+      <div className="agent-retry-copy">
+        <strong>The model returned an empty response.</strong>
+        <span>{stateLabel}</span>
+      </div>
+      <button
+        type="button"
+        className="agent-retry-cancel"
+        onClick={onCancel}
+        disabled={!counting}
+        title={counting ? "Cancel the automatic retry" : undefined}
+      >
+        {retry.status === "cancelled" ? "Cancelled" : "Cancel"}
+      </button>
+    </div>
+  );
+}
+
 export function AgentPanel() {
   const messages = useAgentStore((state) => state.messages);
   const runStatus = useAgentStore((state) => state.runStatus);
   const runStatusText = useAgentStore((state) => state.runStatusText);
   const error = useAgentStore((state) => state.error);
   const queue = useAgentStore((state) => state.queue);
+  const emptyResponseRetry = useAgentStore((state) => state.emptyResponseRetry);
+  const cancelEmptyResponseRetry = useAgentStore(
+    (state) => state.cancelEmptyResponseRetry
+  );
   const undoAvailable = useAgentStore((state) => state.undoAvailable);
   const statusLoaded = useAgentStore((state) => state.statusLoaded);
   const status = useAgentStore((state) => state.status);
@@ -737,6 +779,18 @@ export function AgentPanel() {
                       <Play size={11} /> Keep going
                     </button>
                   </div>
+                );
+              }
+              if (
+                message.role === "notice" &&
+                emptyResponseRetry?.messageId === message.id
+              ) {
+                return (
+                  <EmptyResponseRetryCard
+                    key={message.id}
+                    retry={emptyResponseRetry}
+                    onCancel={cancelEmptyResponseRetry}
+                  />
                 );
               }
               return (
