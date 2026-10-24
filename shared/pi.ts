@@ -15,7 +15,7 @@ export const PI_AGENT = {
   baseUrl: '/api/anthropic',
   apiVersion: '2023-06-01',
   model: 'deepseek-flash[1m]',
-  thinkingLevel: 'medium',
+  thinkingLevel: 'high',
   maxContextTokens: 500_000,
   /** Start dropping the oldest turns once the transcript passes this budget. */
   autoCompactWindow: 400_000,
