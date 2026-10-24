@@ -187,8 +187,13 @@ them to resize it, or press `⌘⇧A` to focus the composer. Tool calls appear a
 colour-coded cards (read, write, shell, search) with status accents, file chips,
 expandable output, and a running scan line. While a turn is active, an animated
 SVG loader sits at the bottom of the chat column and reports the current step.
-Pressing **Stop** aborts the fetch and rolls the conversation back to the last
-completed message.
+
+The composer is a **prompt queue**. Submitting while a turn runs adds the prompt
+to the **Up next** tray (remove one with ×, clear all with the trash button)
+instead of dropping it. Each successful turn automatically starts the next
+queued prompt. **Stop**, an error, or the step limit pauses the queue; press
+**Run queue** to continue with the oldest prompt. Pressing **Stop** also rolls
+the current conversation back to its last completed message.
 
 ## OPFS project storage
 

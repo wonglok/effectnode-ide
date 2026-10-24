@@ -70,6 +70,12 @@ export type AgentMessage =
   | { id: string; role: 'refresh'; at: number }
   | { id: string; role: 'limit'; steps: number; at: number };
 
+export interface AgentQueueItem {
+  id: string;
+  text: string;
+  at: number;
+}
+
 export interface AgentState {
   /** DeepSeek proxy status reported by the Nitro server. */
   status: AgentStatusResponse | null;
@@ -83,6 +89,8 @@ export interface AgentState {
   messages: AgentMessage[];
   todos: AgentTodoItem[];
   history: AgentChatMessage[];
+  /** Prompts scheduled while the current turn is running. */
+  queue: AgentQueueItem[];
   error: string | null;
   undoSnapshot: Record<string, string> | null;
   undoAvailable: boolean;
@@ -93,6 +101,10 @@ export interface AgentState {
   send: (text: string) => Promise<void>;
   /** Resume the loop after the max-step guard without a new user message. */
   keepGoing: () => Promise<void>;
+  /** Run the oldest queued prompt now (after a stop/limit/error). */
+  resumeQueue: () => Promise<void>;
+  removeQueued: (id: string) => void;
+  clearQueue: () => void;
   stop: () => void;
   clear: () => void;
   restoreLastRun: () => Promise<void>;
@@ -101,6 +113,15 @@ export interface AgentState {
 let runSequence = 0;
 let activeRun: { id: number; controller: AbortController } | null = null;
 let initPromise: Promise<void> | null = null;
+let queueProcessing = false;
+
+type RunOutcome = 'complete' | 'limit' | 'stopped' | 'error';
+
+function isConfigured(state: AgentState): boolean {
+  return state.engine === 'claude'
+    ? Boolean(state.status?.claude?.configured)
+    : Boolean(state.status?.configured);
+}
 
 function makeId(prefix: string): string {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return `${prefix}_${crypto.randomUUID()}`;
@@ -192,7 +213,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
     undoSnapshot,
     controller,
     runId,
-  }: RunLoopOptions): Promise<void> => {
+  }: RunLoopOptions): Promise<RunOutcome> => {
     let history = baseHistory;
     let changed = false;
 
@@ -201,7 +222,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
 
     try {
       for (let step = 0; step < MAX_STEPS; step += 1) {
-        if (controller.signal.aborted || runId !== runSequence) return;
+        if (controller.signal.aborted || runId !== runSequence) return 'stopped';
         set({ runStatusText: `Thinking · step ${step + 1}` });
 
         const assistantDisplayId = makeId('assistant');
@@ -266,7 +287,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
                 onReasoning,
               });
 
-        if (runId !== runSequence) return;
+        if (runId !== runSequence) return 'stopped';
 
         const toolCalls = result.toolCalls;
         const hasTools = toolCalls.length > 0;
@@ -353,7 +374,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
           }));
 
           const outcome = await executeAgentTool(preview.name, call.function.arguments);
-          if (runId !== runSequence) return;
+          if (runId !== runSequence) return 'stopped';
           changed = changed || outcome.changed;
 
           set((current) => ({
@@ -393,11 +414,11 @@ export const useAgentStore = create<AgentState>((set, get) => {
             ...undoPatch(),
           }));
           runtime.log('warn', `Agent stopped at the ${MAX_STEPS}-step limit`);
-          return;
+          return 'limit';
         }
       }
 
-      if (runId !== runSequence) return;
+      if (runId !== runSequence) return 'stopped';
 
       if (controller.signal.aborted) {
         set({
@@ -408,7 +429,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
           ...undoPatch(),
         });
         addNotice('Stopped.');
-        return;
+        return 'stopped';
       }
 
       set((current) => ({
@@ -421,8 +442,9 @@ export const useAgentStore = create<AgentState>((set, get) => {
         ...undoPatch(),
       }));
       playCompletionChime();
+      return 'complete';
     } catch (error) {
-      if (runId !== runSequence) return;
+      if (runId !== runSequence) return 'stopped';
 
       const aborted =
         controller.signal.aborted ||
@@ -453,8 +475,61 @@ export const useAgentStore = create<AgentState>((set, get) => {
         }));
         runtime.log('error', `Agent: ${message}`);
       }
+      return aborted ? 'stopped' : 'error';
     } finally {
       if (activeRun?.id === runId) activeRun = null;
+    }
+  };
+
+  /** Start one prompt. Callers must ensure the loop is idle. */
+  const startPrompt = async (text: string): Promise<RunOutcome> => {
+    const state = get();
+
+    // `send` runs from the composer's submit gesture; unlock audio now so the
+    // completion chime is allowed when the model finishes some time later.
+    primeCompletionAudio();
+
+    const snapshot = runtime.snapshot();
+    const controller = new AbortController();
+    const runId = ++runSequence;
+    activeRun = { id: runId, controller };
+
+    const userMessage: AgentChatMessage = { role: 'user', content: text };
+    const baseHistory = [...state.history, userMessage];
+
+    set({
+      runStatus: 'running',
+      runStatusText: 'Thinking…',
+      error: null,
+      history: baseHistory,
+      messages: [
+        ...state.messages.filter((message) => message.role !== 'limit'),
+        { id: makeId('user'), role: 'user', content: text, at: Date.now() },
+      ],
+    });
+
+    return runLoop({ baseHistory, undoSnapshot: snapshot, controller, runId });
+  };
+
+  /** Run queued prompts in order until the queue empties or a turn pauses. */
+  const drainQueue = async (): Promise<void> => {
+    if (queueProcessing) return;
+    queueProcessing = true;
+    try {
+      while (true) {
+        const state = get();
+        if (state.runStatus === 'running') break;
+        const next = state.queue[0];
+        if (!next) break;
+
+        set((current) => ({
+          queue: current.queue.filter((item) => item.id !== next.id),
+        }));
+        const outcome = await startPrompt(next.text);
+        if (outcome !== 'complete') break;
+      }
+    } finally {
+      queueProcessing = false;
     }
   };
 
@@ -468,6 +543,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
     messages: [],
     todos: [],
     history: [],
+    queue: [],
     error: null,
     undoSnapshot: null,
     undoAvailable: false,
@@ -503,38 +579,24 @@ export const useAgentStore = create<AgentState>((set, get) => {
 
     send: async (rawText) => {
       const text = rawText.trim();
-      const state = get();
-      if (!text || state.runStatus === 'running') return;
+      if (!text) return;
 
-      if (!state.status?.configured) {
+      const state = get();
+      if (!isConfigured(state)) {
         set({ setupOpen: true });
         return;
       }
 
-      // `send` runs from the composer's submit gesture; unlock audio now so the
-      // completion chime is allowed when the model finishes some time later.
-      primeCompletionAudio();
-
-      const snapshot = runtime.snapshot();
-      const controller = new AbortController();
-      const runId = ++runSequence;
-      activeRun = { id: runId, controller };
-
-      const userMessage: AgentChatMessage = { role: 'user', content: text };
-      const baseHistory = [...state.history, userMessage];
-
-      set({
-        runStatus: 'running',
-        runStatusText: 'Thinking…',
-        error: null,
-        history: baseHistory,
-        messages: [
-          ...state.messages.filter((message) => message.role !== 'limit'),
-          { id: makeId('user'), role: 'user', content: text, at: Date.now() },
+      // Always schedule, then let the drain decide whether it can start now.
+      // This is what lets the composer accept prompts while a turn is running.
+      set((current) => ({
+        queue: [
+          ...current.queue,
+          { id: makeId('prompt'), text, at: Date.now() },
         ],
-      });
+      }));
 
-      await runLoop({ baseHistory, undoSnapshot: snapshot, controller, runId });
+      await drainQueue();
     },
 
     keepGoing: async () => {
@@ -555,8 +617,26 @@ export const useAgentStore = create<AgentState>((set, get) => {
         messages: current.messages.filter((message) => message.role !== 'limit'),
       }));
 
-      await runLoop({ baseHistory: state.history, undoSnapshot: snapshot, controller, runId });
+      const outcome = await runLoop({
+        baseHistory: state.history,
+        undoSnapshot: snapshot,
+        controller,
+        runId,
+      });
+      if (outcome === 'complete') await drainQueue();
     },
+
+    resumeQueue: async () => {
+      await drainQueue();
+    },
+
+    removeQueued: (id) => {
+      set((current) => ({
+        queue: current.queue.filter((item) => item.id !== id),
+      }));
+    },
+
+    clearQueue: () => set({ queue: [] }),
 
     stop: () => {
       activeRun?.controller.abort();
@@ -572,6 +652,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
         messages: [],
         todos: [],
         history: [],
+        queue: [],
         error: null,
         undoSnapshot: null,
         undoAvailable: false,
@@ -617,6 +698,4 @@ export const useAgentStore = create<AgentState>((set, get) => {
 });
 
 export const selectAgentConfigured = (state: AgentState): boolean =>
-  state.engine === 'claude'
-    ? Boolean(state.status?.claude?.configured)
-    : Boolean(state.status?.configured);
+  isConfigured(state);

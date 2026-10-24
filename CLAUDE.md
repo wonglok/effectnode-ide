@@ -17,3 +17,7 @@ if user provided any glsl code or webgl code or webgl 2.0 code or threeJS WebGLR
 # harness
 
 play a sound 3 times when all things are done (task completed).
+
+# how to deploy:
+
+when user say `deploy later`: after all work are done, git add all and commit with a sutiable title and push to github, and play a glass ding sound 3 times

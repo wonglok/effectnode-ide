@@ -9,6 +9,7 @@ import {
   FolderOpen,
   Image,
   ListChecks,
+  ListPlus,
   Loader2,
   Pencil,
   Play,
@@ -20,6 +21,7 @@ import {
   SquareTerminal,
   Trash2,
   Undo2,
+  X,
 } from "lucide-react";
 import type { AgentEngine } from "../../../shared/types";
 import {
@@ -304,6 +306,72 @@ function TodoPanel() {
   );
 }
 
+function PromptQueue({ running }: { running: boolean }) {
+  const queue = useAgentStore((state) => state.queue);
+  const removeQueued = useAgentStore((state) => state.removeQueued);
+  const clearQueue = useAgentStore((state) => state.clearQueue);
+  const resumeQueue = useAgentStore((state) => state.resumeQueue);
+
+  if (queue.length === 0) return null;
+
+  return (
+    <section className="agent-queue" aria-label="Queued prompts">
+      <div className="agent-queue-head">
+        <span className="agent-queue-mark">
+          <ListPlus size={12} />
+        </span>
+        <span className="agent-queue-title">
+          <strong>Up next</strong>
+          <span>
+            {queue.length} {queue.length === 1 ? "prompt" : "prompts"} ·{" "}
+            {running ? "runs after this task" : "ready to run"}
+          </span>
+        </span>
+        {!running ? (
+          <button
+            type="button"
+            className="agent-queue-run"
+            onClick={() => void resumeQueue()}
+            title="Run the oldest queued prompt now"
+          >
+            <Play size={10} /> Run queue
+          </button>
+        ) : null}
+        <button
+          type="button"
+          className="agent-queue-clear"
+          onClick={clearQueue}
+          title="Clear the queue"
+          aria-label="Clear the queue"
+        >
+          <Trash2 size={11} />
+        </button>
+      </div>
+      <ol className="agent-queue-list">
+        {queue.map((item, index) => (
+          <li key={item.id} className="agent-queue-item">
+            <span className="agent-queue-index">
+              {String(index + 1).padStart(2, "0")}
+            </span>
+            <span className="agent-queue-text" title={item.text}>
+              {item.text}
+            </span>
+            <button
+              type="button"
+              className="agent-queue-remove"
+              onClick={() => removeQueued(item.id)}
+              title="Remove from the queue"
+              aria-label={`Remove queued prompt ${index + 1}`}
+            >
+              <X size={11} />
+            </button>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
 function AgentLoader({
   label,
   engine,
@@ -359,6 +427,7 @@ export function AgentPanel() {
   const runStatus = useAgentStore((state) => state.runStatus);
   const runStatusText = useAgentStore((state) => state.runStatusText);
   const error = useAgentStore((state) => state.error);
+  const queue = useAgentStore((state) => state.queue);
   const undoAvailable = useAgentStore((state) => state.undoAvailable);
   const statusLoaded = useAgentStore((state) => state.statusLoaded);
   const status = useAgentStore((state) => state.status);
@@ -417,7 +486,6 @@ export function AgentPanel() {
   };
 
   const submit = () => {
-    if (running) return;
     if (!configured) {
       openSetup();
       return;
@@ -426,6 +494,7 @@ export function AgentPanel() {
     if (!text) return;
     setDraft("");
     stickToBottom.current = true;
+    // While a turn is active this schedules the prompt; otherwise it starts now.
     void send(text);
   };
 
@@ -692,6 +761,7 @@ export function AgentPanel() {
         {running ? (
           <AgentLoader label={runStatusText ?? ""} engine={engine} />
         ) : null}
+        <PromptQueue running={running} />
       </div>
 
       <div className={`agent-composer ${running ? "is-running" : ""}`}>
@@ -711,7 +781,7 @@ export function AgentPanel() {
           }}
           placeholder={
             running
-              ? "Agent is working…"
+              ? "Agent is working — type to queue the next prompt…"
               : configured
                 ? "Ask for a change to this project…"
                 : "Configure a model to start…"
@@ -723,13 +793,23 @@ export function AgentPanel() {
           aria-label="Message the agent"
         />
         {running ? (
-          <button
-            className="agent-send is-stop"
-            onClick={stop}
-            title="Stop the agent"
-          >
-            <Square size={12} />
-          </button>
+          <>
+            <button
+              className="agent-send agent-send-queue"
+              onClick={submit}
+              disabled={!draft.trim()}
+              title="Queue prompt (Enter)"
+            >
+              <ListPlus size={14} />
+            </button>
+            <button
+              className="agent-send is-stop"
+              onClick={stop}
+              title="Stop the agent"
+            >
+              <Square size={12} />
+            </button>
+          </>
         ) : (
           <button
             className="agent-send"
@@ -743,9 +823,13 @@ export function AgentPanel() {
       </div>
       <div className="agent-composer-meta">
         <span>
-          <kbd>Enter</kbd> send · <kbd>Shift</kbd> + <kbd>Enter</kbd> newline
+          <kbd>Enter</kbd> {running ? "queue" : "send"} · <kbd>Shift</kbd> +{" "}
+          <kbd>Enter</kbd> newline
         </span>
-        <span className="agent-composer-model">{model || "no model"}</span>
+        <span className="agent-composer-model">
+          {queue.length > 0 ? `${queue.length} queued · ` : ""}
+          {model || "no model"}
+        </span>
       </div>
     </section>
   );

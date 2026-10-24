@@ -209,12 +209,6 @@ export default defineEventHandler(async (event) => {
   const timer = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
   timer.unref?.();
 
-  // Stop paying for the upstream stream when the browser aborts a run.
-  const nodeResponse = event.node?.res;
-  nodeResponse?.once('close', () => {
-    if (!nodeResponse.writableEnded) controller.abort();
-  });
-
   let upstream: Response;
   try {
     upstream = await fetch(`${upstreamBaseUrl()}/${path}`, {
