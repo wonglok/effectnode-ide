@@ -1,4 +1,8 @@
 import { strFromU8, unzipSync } from 'fflate';
+import {
+  AGENT_STATE_FILENAME,
+  AGENT_STATE_MAX_BYTES,
+} from '../../shared/agent-state';
 import packageJson from '../../package.json';
 
 /**
@@ -37,6 +41,8 @@ export interface ImportedProject {
   name: string;
   files: Record<string, string>;
   manifest: ProjectArchiveManifest;
+  /** Raw transcript from the archive root, when present and valid JSON. */
+  agentStateRaw: string | null;
 }
 
 export class ProjectArchiveError extends Error {}
@@ -194,5 +200,25 @@ export async function readProjectArchive(file: File): Promise<ImportedProject> {
   const name =
     manifest.projectName.replace(/\(unsaved\)/gi, '').trim() || manifest.root || 'imported-project';
 
-  return { name, files, manifest };
+  // The transcript lives at the archive root, outside the project folder, so it
+  // is never mistaken for a project file. A malformed transcript is ignored
+  // rather than failing the whole import.
+  let agentStateRaw: string | null = null;
+  try {
+    const stateOnly = unzipSync(bytes, {
+      filter: (entry) =>
+        entry.name === AGENT_STATE_FILENAME &&
+        entry.originalSize <= AGENT_STATE_MAX_BYTES,
+    });
+    const stateBytes = stateOnly[AGENT_STATE_FILENAME];
+    if (stateBytes) {
+      const raw = strFromU8(stateBytes);
+      JSON.parse(raw);
+      agentStateRaw = raw;
+    }
+  } catch {
+    // Unreadable or invalid agent state; keep importing the project.
+  }
+
+  return { name, files, manifest, agentStateRaw };
 }

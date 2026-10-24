@@ -7,8 +7,14 @@ import type {
   AgentTodoStatus,
 } from '../../shared/types';
 import { fetchAgentStatus, streamAgentChat } from '@/lib/agent-client';
+import {
+  readPersistedAgentState,
+  serializeAgentState,
+  writePersistedAgentState,
+} from '@/lib/agent-state';
 import { streamClaudeChat } from '@/lib/claude-client';
 import { autoCompactCharBudget } from '@/lib/claude-config';
+import { getBoundProjectId } from '@/lib/opfs';
 import {
   AGENT_TOOLS,
   buildAgentSystemPrompt,
@@ -108,14 +114,26 @@ export interface AgentState {
   stop: () => void;
   clear: () => void;
   restoreLastRun: () => Promise<void>;
+  /** Hydrate the transcript saved beside the active project in OPFS. */
+  loadPersisted: () => Promise<void>;
+  /** Start a new/imported project with an empty transcript. */
+  resetForProject: () => void;
 }
 
 let runSequence = 0;
 let activeRun: { id: number; controller: AbortController } | null = null;
 let initPromise: Promise<void> | null = null;
 let queueProcessing = false;
+let persistEnabled = false;
+let persistTimer: ReturnType<typeof setTimeout> | null = null;
 
 type RunOutcome = 'complete' | 'limit' | 'stopped' | 'error';
+
+function clearPersistTimer(): void {
+  if (persistTimer === null) return;
+  clearTimeout(persistTimer);
+  persistTimer = null;
+}
 
 function isConfigured(state: AgentState): boolean {
   return state.engine === 'claude'
@@ -657,6 +675,8 @@ export const useAgentStore = create<AgentState>((set, get) => {
         undoSnapshot: null,
         undoAvailable: false,
       });
+      // Clearing is an explicit user action; persist the empty transcript now.
+      flushAgentStatePersistence();
     },
 
     restoreLastRun: async () => {
@@ -694,8 +714,153 @@ export const useAgentStore = create<AgentState>((set, get) => {
         useUiStore.getState().toast('Could not revert agent changes', 'error');
       }
     },
+
+    loadPersisted: async () => {
+      persistEnabled = false;
+      clearPersistTimer();
+      activeRun?.controller.abort();
+      activeRun = null;
+      runSequence += 1;
+
+      const projectId = getBoundProjectId();
+      let persisted: Awaited<ReturnType<typeof readPersistedAgentState>> = null;
+      if (projectId) {
+        try {
+          persisted = await readPersistedAgentState(projectId);
+        } catch (error) {
+          runtime.log(
+            'warn',
+            `Could not read the saved agent state: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          );
+        }
+      }
+
+      if (persisted) {
+        try {
+          window.localStorage.setItem(ENGINE_STORAGE_KEY, persisted.engine);
+        } catch {
+          // Storage can be unavailable in private contexts.
+        }
+        set({
+          engine: persisted.engine,
+          messages: persisted.messages,
+          history: persisted.history,
+          todos: persisted.todos,
+          queue: persisted.queue,
+          undoSnapshot: persisted.undoSnapshot,
+          undoAvailable: persisted.undoAvailable,
+          runStatus: 'idle',
+          runStatusText: null,
+          error: null,
+          setupOpen: false,
+        });
+      } else {
+        set({
+          messages: [],
+          history: [],
+          todos: [],
+          queue: [],
+          undoSnapshot: null,
+          undoAvailable: false,
+          runStatus: 'idle',
+          runStatusText: null,
+          error: null,
+          setupOpen: false,
+        });
+      }
+
+      persistEnabled = true;
+    },
+
+    resetForProject: () => {
+      persistEnabled = false;
+      clearPersistTimer();
+      activeRun?.controller.abort();
+      activeRun = null;
+      runSequence += 1;
+      set({
+        messages: [],
+        history: [],
+        todos: [],
+        queue: [],
+        undoSnapshot: null,
+        undoAvailable: false,
+        runStatus: 'idle',
+        runStatusText: null,
+        error: null,
+        setupOpen: false,
+      });
+      persistEnabled = true;
+    },
   };
 });
+
+/** Write the live transcript to the bound project without waiting for the debounce. */
+export function flushAgentStatePersistence(): void {
+  clearPersistTimer();
+  const projectId = getBoundProjectId();
+  if (!projectId) return;
+  try {
+    writePersistedAgentState(projectId, serializeAgentState(useAgentStore.getState()));
+  } catch (error) {
+    runtime.log(
+      'warn',
+      `Could not save the agent state: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
+}
+
+/**
+ * Stop writing while the workspace switches projects, and abort an in-flight
+ * run so it cannot write into the newly bound project.
+ */
+export function pauseAgentStatePersistence(): void {
+  persistEnabled = false;
+  clearPersistTimer();
+  activeRun?.controller.abort();
+  activeRun = null;
+  runSequence += 1;
+}
+
+export function resumeAgentStatePersistence(): void {
+  persistEnabled = true;
+}
+
+function scheduleAgentStatePersistence(): void {
+  if (!persistEnabled || typeof window === 'undefined') return;
+  clearPersistTimer();
+  persistTimer = setTimeout(() => {
+    persistTimer = null;
+    flushAgentStatePersistence();
+  }, 350);
+}
+
+useAgentStore.subscribe((state, previous) => {
+  if (!persistEnabled) return;
+  if (
+    state.engine === previous.engine &&
+    state.messages === previous.messages &&
+    state.history === previous.history &&
+    state.todos === previous.todos &&
+    state.queue === previous.queue &&
+    state.undoSnapshot === previous.undoSnapshot &&
+    state.undoAvailable === previous.undoAvailable
+  ) {
+    return;
+  }
+  scheduleAgentStatePersistence();
+});
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('pagehide', flushAgentStatePersistence);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushAgentStatePersistence();
+  });
+}
 
 export const selectAgentConfigured = (state: AgentState): boolean =>
   isConfigured(state);

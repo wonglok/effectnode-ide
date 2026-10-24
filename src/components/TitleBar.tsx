@@ -14,7 +14,11 @@ import { saveProject } from '@/lib/actions';
 import { downloadProjectZip } from '@/lib/download-zip';
 import { readProjectArchive } from '@/lib/project-archive';
 import { runtime } from '@/lib/runtime';
-import { useAgentStore } from '@/store/agent';
+import {
+  flushAgentStatePersistence,
+  pauseAgentStatePersistence,
+  resumeAgentStatePersistence,
+} from '@/store/agent';
 import { useAuthStore } from '@/store/auth';
 import { useProjectStore } from '@/store/projects';
 import { useRuntimeStore } from '@/store/runtime';
@@ -44,7 +48,6 @@ export function TitleBar() {
   const toast = useUiStore((state) => state.toast);
   const authRequired = useAuthStore((state) => state.required);
   const logout = useAuthStore((state) => state.logout);
-  const clearAgentChat = useAgentStore((state) => state.clear);
 
   const importInputRef = useRef<HTMLInputElement>(null);
 
@@ -58,11 +61,15 @@ export function TitleBar() {
       const fileCount = Object.keys(archive.files).length;
       openConfirm({
         title: `Import “${archive.name}”?`,
-        message: `This replaces the current virtual files with ${fileCount} files from the ZIP (archive v${archive.manifest.version}). Save first if you want to keep them.`,
+        message: `This replaces the current virtual files with ${fileCount} files from the ZIP (archive v${archive.manifest.version}). The archived agent chat is restored too. Save first if you want to keep them.`,
         confirmLabel: 'Import project',
         onConfirm: () => {
           closeConfirm();
-          void importProject(archive.name, archive.files).catch((error) => {
+          void importProject(
+            archive.name,
+            archive.files,
+            archive.agentStateRaw
+          ).catch((error) => {
             const message = error instanceof Error ? error.message : String(error);
             runtime.log('error', `Import failed: ${message}`);
             toast('Could not import the project', 'error');
@@ -90,9 +97,12 @@ export function TitleBar() {
   };
 
   const onLogout = () => {
-    // Abort any running agent and drop its transcript before locking the UI.
-    clearAgentChat();
+    // Save the transcript and abort any running agent; locking must not wipe it.
+    flushAgentStatePersistence();
+    pauseAgentStatePersistence();
     logout();
+    // The IDE can re-unlock without a full reload; resume saving then.
+    resumeAgentStatePersistence();
   };
 
   return (

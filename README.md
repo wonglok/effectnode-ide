@@ -201,6 +201,7 @@ Project code is persisted in the browser's Origin Private File System:
 
 ```
 sandbox/<ide-sandbox-id>/projects/<project-id>/<project files…>
+sandbox/<ide-sandbox-id>/projects/<project-id>/agent-state.json
 sandbox/<ide-sandbox-id>/projects/<project-id>/.forge/project.json
 ```
 
@@ -216,6 +217,12 @@ sandbox/<ide-sandbox-id>/projects/<project-id>/.forge/project.json
   whole folder is rewritten.
 - The Nitro snapshot (`Save`) remains as a server-side backup and shareable
   project record; OPFS is the live local store.
+- The agent transcript lives at `projects/<project-id>/agent-state.json` and is
+  excluded from the virtual file system, so it never appears in the explorer,
+  the preview, or the agent's tools. It stores the messages, model history,
+  task plan, queue, engine choice, and undo snapshot, is debounced while the
+  agent runs, and is restored on reload or project open. New projects start
+  empty; switching projects loads that project's transcript.
 - Browsers without OPFS fall back to the previous in-memory behaviour; the sink
   no-ops and the app still runs.
 
@@ -330,7 +337,8 @@ the browser agent executes tools locally and mirrors files to OPFS.
 
 ### Project archive format
 
-ZIP exports contain a root `forge.manifest.json` and a single project folder:
+ZIP exports contain a root `forge.manifest.json`, a root `agent-state.json`
+(the project's agent transcript), and a single project folder:
 
 ```json
 {

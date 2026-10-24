@@ -1,4 +1,5 @@
 import { strToU8, zipSync } from 'fflate';
+import { AGENT_STATE_FILENAME } from '../../shared/agent-state';
 import { runtime } from './runtime';
 import {
   APP_VERSION,
@@ -7,6 +8,11 @@ import {
   MANIFEST_FILENAME,
   type ProjectArchiveManifest,
 } from './project-archive';
+import { serializeAgentState } from './agent-state';
+import {
+  flushAgentStatePersistence,
+  useAgentStore,
+} from '@/store/agent';
 import { useProjectStore } from '@/store/projects';
 import { useUiStore } from '@/store/ui';
 import { useWorkspaceStore } from '@/store/workspace';
@@ -29,6 +35,7 @@ function archiveName(projectName: string): string {
  */
 export function downloadProjectZip(): void {
   useWorkspaceStore.getState().flush();
+  flushAgentStatePersistence();
 
   const files = runtime.snapshot();
   const paths = Object.keys(files).sort();
@@ -53,6 +60,21 @@ export function downloadProjectZip(): void {
     fileCount: paths.length,
   };
   entries[MANIFEST_FILENAME] = strToU8(JSON.stringify(manifest, null, 2));
+
+  // The transcript sits at the archive root, outside the project folder, so it
+  // never becomes a virtual project file.
+  try {
+    entries[AGENT_STATE_FILENAME] = strToU8(
+      serializeAgentState(useAgentStore.getState())
+    );
+  } catch (error) {
+    runtime.log(
+      'warn',
+      `Agent state was not exported: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
 
   for (const path of paths) {
     const relative = path.replace(/^\/+/, '');

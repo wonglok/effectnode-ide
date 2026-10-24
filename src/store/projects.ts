@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import type { ProjectMeta, ProjectSnapshot } from '../../shared/types';
 import { projectApi } from '@/lib/api';
+import { writePersistedAgentState } from '@/lib/agent-state';
 import {
   bindOpfsProject,
   clearLocalProject,
@@ -11,6 +12,12 @@ import {
 } from '@/lib/opfs';
 import { runtime } from '@/lib/runtime';
 import { STARTER_FILES, STARTER_PROJECT_NAME } from '@/lib/starter-project';
+import {
+  flushAgentStatePersistence,
+  pauseAgentStatePersistence,
+  resumeAgentStatePersistence,
+  useAgentStore,
+} from './agent';
 import { restartWithFiles } from './runtime';
 import { useUiStore } from './ui';
 import { useWorkspaceStore } from './workspace';
@@ -45,7 +52,11 @@ interface ProjectState {
   remove: (id: string) => Promise<boolean>;
   newProject: (name?: string) => Promise<void>;
   /** Replace the workspace with files from a validated Forge ZIP archive. */
-  importProject: (name: string, files: Record<string, string>) => Promise<void>;
+  importProject: (
+    name: string,
+    files: Record<string, string>,
+    agentStateRaw?: string | null
+  ) => Promise<void>;
 }
 
 export const useProjectStore = create<ProjectState>((set, get) => ({
@@ -89,6 +100,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   save: async (name, options) => {
     if (get().saving) return false;
+    flushAgentStatePersistence();
     useWorkspaceStore.getState().flush();
     const projectName = (name ?? get().name).trim() || 'untitled';
     const files = runtime.snapshot();
@@ -109,6 +121,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       // A local project becomes a server project: move its OPFS folder from
       // the local id to the server-assigned id before rebinding.
       if (localProject) {
+        pauseAgentStatePersistence();
         try {
           await opfsProjectStore.moveProject(localProject.id, meta.id);
           clearLocalProject();
@@ -138,6 +151,12 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         );
       }
 
+      if (localProject) {
+        // Keep the live transcript under the server-assigned project id.
+        resumeAgentStatePersistence();
+        flushAgentStatePersistence();
+      }
+
       localStorage.setItem(CURRENT_PROJECT_KEY, meta.id);
       set({
         saving: false,
@@ -163,6 +182,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   open: async (id) => {
     if (get().openingId) return false;
     set({ openingId: id });
+    flushAgentStatePersistence();
+    pauseAgentStatePersistence();
     try {
       const known = get().projects.find((project) => project.id === id);
       let cached: Awaited<ReturnType<typeof opfsProjectStore.read>> = null;
@@ -199,6 +220,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       // replaceProject mirrors the opened files into OPFS via the bound sink.
       await restartWithFiles(files);
       useWorkspaceStore.getState().loadFiles(files);
+      await useAgentStore.getState().loadPersisted();
       clearLocalProject();
       localStorage.setItem(CURRENT_PROJECT_KEY, meta.id);
       set({
@@ -213,6 +235,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       return true;
     } catch (error) {
       set({ openingId: null });
+      resumeAgentStatePersistence();
       const message = error instanceof Error ? error.message : String(error);
       runtime.log('error', `Open failed: ${message}`);
       useUiStore.getState().toast('Could not open the project', 'error');
@@ -238,8 +261,10 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       }
 
       if (wasCurrent) {
-        // Keep the files the user is looking at as a new OPFS-backed local
-        // project instead of discarding them.
+        // Keep the files and transcript the user is looking at as a new
+        // OPFS-backed local project instead of discarding them.
+        flushAgentStatePersistence();
+        pauseAgentStatePersistence();
         const local = createLocalProject(`${get().name} (unsaved)`);
         const files = runtime.snapshot();
         bindOpfsProject(local.id, local.name);
@@ -248,6 +273,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         } catch {
           // OPFS is optional.
         }
+        resumeAgentStatePersistence();
+        flushAgentStatePersistence();
         set({
           currentId: null,
           name: local.name,
@@ -268,6 +295,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   },
 
   newProject: async (name) => {
+    flushAgentStatePersistence();
+    pauseAgentStatePersistence();
     useWorkspaceStore.getState().flush();
     const projectName = name?.trim() || 'untitled';
     const local = createLocalProject(projectName);
@@ -282,11 +311,14 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       createdAt: local.createdAt,
       updatedAt: local.updatedAt,
     });
+    useAgentStore.getState().resetForProject();
     runtime.log('info', `Started “${local.name}” in OPFS`);
     useUiStore.getState().toast('New project ready');
   },
 
-  importProject: async (name, files) => {
+  importProject: async (name, files, agentStateRaw = null) => {
+    flushAgentStatePersistence();
+    pauseAgentStatePersistence();
     useWorkspaceStore.getState().flush();
     const projectName = name.trim() || 'imported-project';
     const local = createLocalProject(projectName);
@@ -300,6 +332,14 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       createdAt: local.createdAt,
       updatedAt: local.updatedAt,
     });
+
+    if (agentStateRaw) {
+      // Write first, then hydrate; the OPFS queue preserves the ordering.
+      writePersistedAgentState(local.id, agentStateRaw);
+      await useAgentStore.getState().loadPersisted();
+    } else {
+      useAgentStore.getState().resetForProject();
+    }
 
     const fileCount = Object.keys(files).length;
     runtime.log('success', `Imported “${local.name}” · ${fileCount} files into OPFS`);

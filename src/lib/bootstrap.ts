@@ -1,4 +1,5 @@
 import type { ProjectMeta, ProjectSnapshot } from '../../shared/types';
+import { useAgentStore } from '@/store/agent';
 import { useProjectStore, CURRENT_PROJECT_KEY } from '@/store/projects';
 import { useRuntimeStore } from '@/store/runtime';
 import { useWorkspaceStore } from '@/store/workspace';
@@ -103,6 +104,7 @@ async function hydrate(
 
   await useRuntimeStore.getState().boot(files);
   useWorkspaceStore.getState().loadFiles(files);
+  await useAgentStore.getState().loadPersisted();
 
   if (target.kind === 'saved') {
     useProjectStore.getState().setCurrent(target.meta);

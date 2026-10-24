@@ -1,3 +1,4 @@
+import { AGENT_STATE_FILENAME } from '../../shared/agent-state';
 import type { FileSink } from './runtime';
 
 /**
@@ -6,6 +7,7 @@ import type { FileSink } from './runtime';
  * Layout (inside the browser's OPFS root):
  *
  *   sandbox/<ide-sandbox-id>/projects/<project-id>/<project files…>
+ *   sandbox/<ide-sandbox-id>/projects/<project-id>/agent-state.json
  *   sandbox/<ide-sandbox-id>/projects/<project-id>/.forge/project.json
  *
  * The almostnode VirtualFS stays the live working tree; every mutation is
@@ -287,15 +289,50 @@ class OpfsProjectStore {
     });
   }
 
-  /** Rewrite a whole project folder from a snapshot (used on open/new/undo). */
+  /** Read the agent transcript stored beside the project code. */
+  readAgentState(projectId: string): Promise<string | null> {
+    return this.run(async () => {
+      const project = await this.projectDir(projectId, false);
+      if (!project) return null;
+      return readAgentStateHandle(project);
+    });
+  }
+
+  /** Persist the agent transcript beside the project code. */
+  writeAgentState(projectId: string, raw: string): void {
+    this.enqueue(async () => {
+      const project = await this.projectDir(projectId, true);
+      if (!project) return;
+      await writeAgentStateHandle(project, raw);
+    });
+  }
+
+  /**
+   * Rewrite a whole project folder from a snapshot (used on open/new/undo).
+   *
+   * `agentState` is undefined to preserve the existing transcript, null to drop
+   * it, or a raw JSON string to replace it.
+   */
   replaceAll(
     projectId: string,
     files: Record<string, string>,
-    manifest?: ProjectManifest
+    manifest?: ProjectManifest,
+    agentState?: string | null
   ): Promise<void> {
     return this.run(async () => {
       const projects = await this.projectsDir(true);
       if (!projects || !validId(projectId)) return;
+
+      let preservedState = agentState;
+      if (preservedState === undefined) {
+        try {
+          const existing = await projects.getDirectoryHandle(projectId, { create: false });
+          preservedState = await readAgentStateHandle(existing);
+        } catch {
+          preservedState = null;
+        }
+      }
+
       try {
         await projects.removeEntry(projectId, { recursive: true });
       } catch {
@@ -316,6 +353,7 @@ class OpfsProjectStore {
       }
 
       if (manifest) await writeManifestHandle(project, manifest);
+      if (preservedState) await writeAgentStateHandle(project, preservedState);
     });
   }
 
@@ -352,10 +390,12 @@ class OpfsProjectStore {
     if (fromId === toId || !validId(toId)) return;
     const source = await this.read(fromId);
     if (!source) return;
+    const agentState = await this.readAgentState(fromId);
     await this.replaceAll(
       toId,
       source.files,
-      source.manifest ?? { name: 'saved project' }
+      source.manifest ?? { name: 'saved project' },
+      agentState
     );
     await this.deleteProject(fromId);
   }
@@ -381,6 +421,27 @@ async function writeManifestHandle(
   const metaFile = await metaDir.getFileHandle(META_FILE, { create: true });
   const writable = await metaFile.createWritable();
   await writable.write(JSON.stringify(manifest, null, 2));
+  await writable.close();
+}
+
+async function readAgentStateHandle(
+  project: FileSystemDirectoryHandle
+): Promise<string | null> {
+  try {
+    const file = await project.getFileHandle(AGENT_STATE_FILENAME, { create: false });
+    return await (await file.getFile()).text();
+  } catch {
+    return null;
+  }
+}
+
+async function writeAgentStateHandle(
+  project: FileSystemDirectoryHandle,
+  raw: string
+): Promise<void> {
+  const file = await project.getFileHandle(AGENT_STATE_FILENAME, { create: true });
+  const writable = await file.createWritable();
+  await writable.write(raw);
   await writable.close();
 }
 
@@ -433,7 +494,7 @@ async function readTree(
   files: Record<string, string>
 ): Promise<void> {
   for await (const [name, handle] of directory) {
-    if (!prefix && name === META_DIR) continue;
+    if (!prefix && (name === META_DIR || name === AGENT_STATE_FILENAME)) continue;
     const virtualPath = `${prefix}/${name}`;
     if (handle.kind === 'file') {
       try {
@@ -470,6 +531,10 @@ export function bindOpfsProject(projectId: string | null, name = ''): void {
   if (bound) {
     opfsProjectStore.writeManifest(bound.projectId, { name: bound.name });
   }
+}
+
+export function getBoundProjectId(): string | null {
+  return bound?.projectId ?? null;
 }
 
 export function updateOpfsProjectName(name: string): void {
