@@ -10,6 +10,8 @@ export function ActivityRail() {
   const setShortcutsOpen = useUiStore((state) => state.setShortcutsOpen);
   const status = useRuntimeStore((state) => state.status);
 
+  //
+
   return (
     <nav className="rail" aria-label="Activity">
       <div className="rail-group">
