@@ -197,7 +197,8 @@ Each turn:
    If it is not cancelled, the harness clicks Keep going automatically and resumes
    from the saved history. **Cancel** stops the automatic resume; the Keep going
    button stays available for a manual retry.
-7. The pre-turn snapshot powers **Undo run**; a chime marks completion.
+7. The pre-turn snapshot powers **Undo run**; task completion reloads the
+   preview automatically and plays the completion chime three times.
 8. If the model ends with an empty response, a 3-second countdown sends
    `keep going`. **Cancel** stops the automatic retry; the button disables once
    the prompt is sent or the retry is cancelled.

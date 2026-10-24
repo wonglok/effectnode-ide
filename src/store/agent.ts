@@ -28,6 +28,7 @@ import {
   primeCompletionAudio,
 } from "@/lib/completion-chime";
 import { runtime } from "@/lib/runtime";
+import { useRuntimeStore } from "./runtime";
 import { useUiStore } from "./ui";
 import { useWorkspaceStore } from "./workspace";
 
@@ -685,7 +686,9 @@ export const useAgentStore = create<AgentState>((set, get) => {
         ],
         ...undoPatch(),
       }));
-      playCompletionChime();
+      // Task complete: reload the preview so the user sees the final state.
+      useRuntimeStore.getState().reloadPreview();
+      playCompletionChime(3);
       return "complete";
     } catch (error) {
       if (runId !== runSequence) return "stopped";
@@ -990,7 +993,9 @@ export const useAgentStore = create<AgentState>((set, get) => {
         ],
         ...undoPatch(),
       }));
-      playCompletionChime();
+      // Task complete: reload the preview so the user sees the final state.
+      useRuntimeStore.getState().reloadPreview();
+      playCompletionChime(3);
       return "complete";
     } catch (error) {
       if (runId !== runSequence) return "stopped";

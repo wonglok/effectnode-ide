@@ -69,7 +69,7 @@ function RefreshBubble() {
         </span>
         <span className="agent-refresh-copy">
           <strong>Task complete</strong>
-          Reload the preview to see the latest changes.
+          The preview refreshed with the latest changes.
         </span>
         <button
           type="button"
@@ -80,7 +80,7 @@ function RefreshBubble() {
           }}
         >
           {refreshed ? <Check size={12} /> : <RefreshCw size={12} />}
-          {refreshed ? "Refreshed" : "Refresh web"}
+          {refreshed ? "Refreshed" : "Refresh again"}
         </button>
       </div>
     </div>
