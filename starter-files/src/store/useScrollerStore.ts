@@ -55,8 +55,15 @@ type ScrollMotion = 'idle' | 'spring' | 'coast' | 'preview';
 
 const SCROLL_STIFFNESS = 30;
 const SCROLL_DAMPING = 11;
-/** Chapter-number navigation uses a softer spring, about twice as slow. */
-const SLOW_SCROLL_STIFFNESS = 6;
+/**
+ * Chapter-number navigation uses a softer spring than wheel scrolling, tuned
+ * 1.5× faster than the original HUD profile. A critically damped spring
+ * settles in a time proportional to 1/√stiffness, so the speed factor is
+ * applied squared to the base stiffness.
+ */
+const HUD_BASE_STIFFNESS = 6;
+const HUD_SPEED_FACTOR = 1.5;
+const SLOW_SCROLL_STIFFNESS = HUD_BASE_STIFFNESS * HUD_SPEED_FACTOR ** 2;
 const SLOW_SCROLL_DAMPING = 2 * Math.sqrt(SLOW_SCROLL_STIFFNESS);
 
 type ScrollEngine = {

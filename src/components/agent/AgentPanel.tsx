@@ -23,7 +23,7 @@ import { RichText } from './RichText';
 const SUGGESTIONS = [
   'Add a fifth chapter to the MY COMPANY landing page.',
   'Add a contact panel that appears after the last chapter.',
-  'Slow down the flow-shield scene and tint it warmer.',
+  'please update the "MY COMPANY" branding placeholder to my own:',
 ];
 
 function TypingDots() {
