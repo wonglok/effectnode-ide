@@ -1,26 +1,12 @@
 import { create } from 'zustand';
-import type { AgentChatMessage, AgentToolCall } from '../../shared/types';
-import { fetchAgentStatus, streamAgentChat } from '@/lib/agent-client';
-import {
-  agentIsConfigured,
-  EMPTY_AGENT_CONFIG,
-  loadAgentConfig,
-  persistAgentConfig,
-  type AgentConfig,
-} from '@/lib/agent-config';
-import {
-  AGENT_TOOLS,
-  buildAgentSystemPrompt,
-  describeToolCall,
-  executeAgentTool,
-} from '@/lib/agent-tools';
+import type { HarnessStatus } from '../../shared/types';
+import { fetchAgentStatus } from '@/lib/agent-client';
+import { runHarnessTurn } from '@/lib/harness-client';
 import { playCompletionChime, primeCompletionAudio } from '@/lib/completion-chime';
 import { runtime } from '@/lib/runtime';
+import { useProjectStore } from './projects';
 import { useUiStore } from './ui';
 import { useWorkspaceStore } from './workspace';
-
-const MAX_STEPS = 8;
-const MAX_HISTORY_MESSAGES = 40;
 
 export type AgentRunStatus = 'idle' | 'running';
 
@@ -41,20 +27,18 @@ export type AgentMessage =
   | { id: string; role: 'refresh'; at: number };
 
 export interface AgentState {
-  config: AgentConfig;
-  hasServerKey: boolean;
+  /** DeepSeek Harness route reported by the Nitro server. */
+  harness: HarnessStatus | null;
   statusLoaded: boolean;
   setupOpen: boolean;
   runStatus: AgentRunStatus;
-  step: number;
+  runStatusText: string | null;
   messages: AgentMessage[];
-  history: AgentChatMessage[];
   error: string | null;
   undoSnapshot: Record<string, string> | null;
   undoAvailable: boolean;
 
   init: () => Promise<void>;
-  setConfig: (config: AgentConfig) => void;
   openSetup: () => void;
   closeSetup: () => void;
   send: (text: string) => Promise<void>;
@@ -72,69 +56,93 @@ function makeId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 }
 
-function trimHistory(history: AgentChatMessage[]): AgentChatMessage[] {
-  const slice = history.slice(-MAX_HISTORY_MESSAGES);
-  while (slice.length > 0 && slice[0].role === 'tool') slice.shift();
-  return slice;
-}
-
 function finalizeStreaming(messages: AgentMessage[]): AgentMessage[] {
   return messages.map((message) =>
     message.role === 'assistant' && message.streaming ? { ...message, streaming: false } : message
   );
 }
 
+/**
+ * Stable per-project conversation identity. The server maps it to one harness
+ * session and one mirrored workspace directory.
+ */
+function conversationKey(): string {
+  const project = useProjectStore.getState();
+  const identity = project.currentId ?? `scratch:${project.name}`;
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < identity.length; index += 1) {
+    hash ^= identity.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `forge-${(hash >>> 0).toString(36).padStart(7, '0')}`;
+}
+
+/** Apply the harness's mirrored project to the in-page virtual file system. */
+function applyHarnessFiles(files: Record<string, string>, changedPaths: string[]): void {
+  if (changedPaths.length === 0) return;
+
+  const workspace = useWorkspaceStore.getState();
+  const deleted = new Set<string>();
+
+  for (const path of changedPaths) {
+    if (files[path] === undefined) {
+      deleted.add(path);
+      if (runtime.exists(path)) runtime.deleteEntry(path);
+    } else {
+      runtime.createFile(path, files[path]);
+    }
+  }
+
+  const buffers: Record<string, string> = {};
+  for (const [path, content] of Object.entries(workspace.buffers)) {
+    if (deleted.has(path)) continue;
+    buffers[path] = files[path] ?? content;
+  }
+
+  const openFiles = workspace.openFiles.filter((path) => !deleted.has(path));
+  const activeFile =
+    workspace.activeFile && openFiles.includes(workspace.activeFile)
+      ? workspace.activeFile
+      : openFiles[0] ?? null;
+
+  useWorkspaceStore.setState({
+    buffers,
+    openFiles,
+    activeFile,
+    selectedPath: activeFile ?? workspace.selectedPath,
+  });
+  useWorkspaceStore.getState().refresh();
+  runtime.requestPreviewReload();
+}
+
 export const useAgentStore = create<AgentState>((set, get) => ({
-  config: { ...EMPTY_AGENT_CONFIG },
-  hasServerKey: false,
+  harness: null,
   statusLoaded: false,
   setupOpen: false,
   runStatus: 'idle',
-  step: 0,
+  runStatusText: null,
   messages: [],
-  history: [],
   error: null,
   undoSnapshot: null,
   undoAvailable: false,
 
   init: () => {
     initPromise ??= (async () => {
-      const loaded = loadAgentConfig();
-      set({ config: loaded });
       try {
         const status = await fetchAgentStatus();
         set({
-          hasServerKey: status.configured,
+          harness: status.harness,
           statusLoaded: true,
-          config: {
-            baseUrl: loaded.baseUrl || status.defaultBaseUrl,
-            model: loaded.model || status.defaultModel,
-            apiKey: loaded.apiKey,
-          },
         });
       } catch (error) {
         set({ statusLoaded: true });
         runtime.log(
           'warn',
-          `Agent status unavailable: ${error instanceof Error ? error.message : String(error)}`
+          `Harness status unavailable: ${error instanceof Error ? error.message : String(error)}`
         );
       }
     })();
     return initPromise;
-  },
-
-  setConfig: (config) => {
-    const clean: AgentConfig = {
-      baseUrl: config.baseUrl.trim().replace(/\/+$/, ''),
-      model: config.model.trim(),
-      apiKey: config.apiKey.trim(),
-    };
-    persistAgentConfig(clean);
-    set({ config: clean, setupOpen: false, error: null });
-    if (agentIsConfigured(clean, get().hasServerKey)) {
-      runtime.log('success', `Agent connected · ${clean.model}`);
-      useUiStore.getState().toast(`Agent ready · ${clean.model}`);
-    }
   },
 
   openSetup: () => set({ setupOpen: true }),
@@ -145,7 +153,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     const state = get();
     if (!text || state.runStatus === 'running') return;
 
-    if (!agentIsConfigured(state.config, state.hasServerKey)) {
+    if (!state.harness?.configured) {
       set({ setupOpen: true });
       return;
     }
@@ -154,177 +162,156 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     // completion chime is allowed when the model finishes some time later.
     primeCompletionAudio();
 
+    useWorkspaceStore.getState().flush();
     const snapshot = runtime.snapshot();
     const controller = new AbortController();
     const runId = ++runSequence;
     activeRun = { id: runId, controller };
 
-    const userMessage: AgentChatMessage = { role: 'user', content: text };
-    const baseHistory = [...state.history, userMessage];
-    let history = baseHistory;
-    let changed = false;
-
+    const assistantDisplayId = makeId('assistant');
     set({
       runStatus: 'running',
+      runStatusText: 'Syncing project…',
       error: null,
-      step: 0,
-      history,
       messages: [
         ...state.messages,
         { id: makeId('user'), role: 'user', content: text, at: Date.now() },
+        {
+          id: assistantDisplayId,
+          role: 'assistant',
+          content: '',
+          streaming: true,
+          at: Date.now(),
+        },
       ],
     });
 
+    const toolMessages = new Map<string, string>();
+
     const addNotice = (content: string) => {
       set((current) => ({
-        messages: [...current.messages, { id: makeId('notice'), role: 'notice', content, at: Date.now() }],
+        messages: [
+          ...current.messages,
+          { id: makeId('notice'), role: 'notice', content, at: Date.now() },
+        ],
+      }));
+    };
+
+    const addTool = (event: { id: string; name: string; summary: string; path?: string }) => {
+      const displayId = makeId('tool');
+      toolMessages.set(event.id, displayId);
+      set((current) => ({
+        messages: [
+          ...current.messages,
+          {
+            id: displayId,
+            role: 'tool',
+            at: Date.now(),
+            tool: {
+              name: event.name,
+              summary: event.summary,
+              path: event.path,
+              status: 'running',
+            },
+          },
+        ],
+      }));
+    };
+
+    const finishTool = (event: {
+      id: string;
+      name: string;
+      status: 'ok' | 'error';
+      detail?: string;
+      path?: string;
+    }) => {
+      const displayId = toolMessages.get(event.id);
+      if (!displayId) return;
+      set((current) => ({
+        messages: current.messages.map((message) =>
+          message.role === 'tool' && message.id === displayId
+            ? {
+                ...message,
+                tool: {
+                  ...message.tool,
+                  status: event.status,
+                  detail: event.detail ?? message.tool.detail,
+                  path: event.path ?? message.tool.path,
+                },
+              }
+            : message
+        ),
       }));
     };
 
     try {
-      for (let step = 0; step < MAX_STEPS; step += 1) {
-        if (controller.signal.aborted || runId !== runSequence) break;
-        set({ step: step + 1 });
-
-        const assistantDisplayId = makeId('assistant');
-        set((current) => ({
-          messages: [
-            ...current.messages,
-            { id: assistantDisplayId, role: 'assistant', content: '', streaming: true, at: Date.now() },
-          ],
-        }));
-
-        const result = await streamAgentChat({
-          messages: [{ role: 'system', content: buildAgentSystemPrompt() }, ...trimHistory(history)],
-          tools: AGENT_TOOLS,
-          config: get().config,
-          signal: controller.signal,
-          onDelta: (chunk) => {
-            if (runId !== runSequence) return;
-            set((current) => ({
-              messages: current.messages.map((message) =>
-                message.role === 'assistant' && message.id === assistantDisplayId
-                  ? { ...message, content: message.content + chunk }
-                  : message
-              ),
-            }));
-          },
-        });
-
-        if (runId !== runSequence) return;
-
-        const toolCalls: AgentToolCall[] = result.toolCalls;
-        const hasTools = toolCalls.length > 0;
-
-        set((current) => ({
-          messages: current.messages.flatMap((message) => {
-            if (message.role !== 'assistant' || message.id !== assistantDisplayId) return [message];
-            if (!result.content.trim() && hasTools) return [];
-            return [{ ...message, content: result.content, streaming: false }];
-          }),
-        }));
-
-        const assistantMessage: AgentChatMessage = {
-          role: 'assistant',
-          content: result.content || null,
-        };
-        if (hasTools) assistantMessage.tool_calls = toolCalls;
-        history = [...history, assistantMessage];
-        set({ history });
-
-        if (!hasTools) {
-          if (!result.content.trim()) {
-            addNotice('The model returned an empty response.');
-          }
-          break;
-        }
-
-        for (const call of toolCalls) {
-          if (controller.signal.aborted || runId !== runSequence) break;
-          const preview = describeToolCall(call);
-          const displayId = makeId('tool');
-
-          set((current) => ({
-            messages: [
-              ...current.messages,
-              {
-                id: displayId,
-                role: 'tool',
-                at: Date.now(),
-                tool: {
-                  name: preview.name,
-                  summary: preview.summary,
-                  path: preview.path,
-                  status: 'running',
-                },
-              },
-            ],
-          }));
-
-          const outcome = await executeAgentTool(preview.name, call.function.arguments);
+      const result = await runHarnessTurn({
+        prompt: text,
+        conversationKey: conversationKey(),
+        files: snapshot,
+        signal: controller.signal,
+        onEvent: (event) => {
           if (runId !== runSequence) return;
-          changed = changed || outcome.changed;
-
-          set((current) => ({
-            messages: current.messages.map((message) =>
-              message.role === 'tool' && message.id === displayId
-                ? {
-                    ...message,
-                    tool: {
-                      name: preview.name,
-                      summary: outcome.summary,
-                      detail: outcome.detail,
-                      path: outcome.path ?? preview.path,
-                      status: outcome.status,
-                    },
-                  }
-                : message
-            ),
-          }));
-
-          history = [
-            ...history,
-            { role: 'tool', tool_call_id: call.id, content: outcome.output },
-          ];
-          set({ history });
-        }
-
-        if (controller.signal.aborted) break;
-        if (step === MAX_STEPS - 1) {
-          addNotice(`Stopped after ${MAX_STEPS} steps. Ask again to continue.`);
-        }
-      }
+          if (event.type === 'status') {
+            set({ runStatusText: event.message });
+          } else if (event.type === 'tool') {
+            addTool(event);
+          } else if (event.type === 'tool-done') {
+            finishTool(event);
+          }
+        },
+      });
 
       if (runId !== runSequence) return;
 
-      if (controller.signal.aborted) {
-        set({
-          runStatus: 'idle',
-          step: 0,
-          history: baseHistory,
-          messages: finalizeStreaming(get().messages),
-          ...(changed ? { undoSnapshot: snapshot, undoAvailable: true } : {}),
-        });
-        addNotice('Stopped.');
-        return;
-      }
+      applyHarnessFiles(result.files, result.changedPaths);
 
-      const refreshMessage: AgentMessage = {
-        id: makeId('refresh'),
-        role: 'refresh',
-        at: Date.now(),
-      };
+      const changed = result.changedPaths.length > 0;
+      const response =
+        result.finalResponse.trim() ||
+        (changed ? 'Done — the project has been updated.' : 'Done.');
+
       set((current) => ({
         runStatus: 'idle',
-        step: 0,
-        messages: [...finalizeStreaming(current.messages), refreshMessage],
+        runStatusText: null,
+        messages: [
+          ...finalizeStreaming(current.messages).map((message) => {
+            if (message.role === 'assistant' && message.id === assistantDisplayId) {
+              return { ...message, content: response, streaming: false };
+            }
+            if (message.role === 'tool' && message.tool.status === 'running') {
+              return { ...message, tool: { ...message.tool, status: 'ok' as const } };
+            }
+            return message;
+          }),
+          { id: makeId('refresh'), role: 'refresh', at: Date.now() },
+        ],
         ...(changed ? { undoSnapshot: snapshot, undoAvailable: true } : {}),
       }));
+
+      if (result.skipped.length > 0) {
+        addNotice(
+          `Skipped ${result.skipped.length} non-text or oversized file${
+            result.skipped.length === 1 ? '' : 's'
+          } when mirroring back: ${result.skipped.slice(0, 3).join(', ')}${
+            result.skipped.length > 3 ? '…' : ''
+          }`
+        );
+      }
+
+      if (result.changedPaths.length > 0) {
+        runtime.log(
+          'success',
+          `Harness updated ${result.changedPaths.length} file${result.changedPaths.length === 1 ? '' : 's'}`
+        );
+      }
       playCompletionChime();
     } catch (error) {
       if (runId !== runSequence) return;
 
-      const aborted = error instanceof DOMException && error.name === 'AbortError';
+      const aborted =
+        controller.signal.aborted ||
+        (error instanceof DOMException && error.name === 'AbortError');
       const message = aborted
         ? 'Stopped.'
         : error instanceof Error
@@ -333,11 +320,9 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
       set({
         runStatus: 'idle',
-        step: 0,
-        history: baseHistory,
+        runStatusText: null,
         error: aborted ? null : message,
         messages: finalizeStreaming(get().messages),
-        ...(changed ? { undoSnapshot: snapshot, undoAvailable: true } : {}),
       });
 
       if (aborted) {
@@ -349,7 +334,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             { id: makeId('error'), role: 'error', content: message, at: Date.now() },
           ],
         }));
-        runtime.log('error', `Agent: ${message}`);
+        runtime.log('error', `Harness: ${message}`);
       }
     } finally {
       if (activeRun?.id === runId) activeRun = null;
@@ -366,9 +351,8 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     runSequence += 1;
     set({
       runStatus: 'idle',
-      step: 0,
+      runStatusText: null,
       messages: [],
-      history: [],
       error: null,
       undoSnapshot: null,
       undoAvailable: false,
@@ -390,6 +374,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         undoSnapshot: null,
         undoAvailable: false,
         runStatus: 'idle',
+        runStatusText: null,
         messages: [
           ...current.messages,
           {
@@ -411,4 +396,4 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 }));
 
 export const selectAgentConfigured = (state: AgentState): boolean =>
-  agentIsConfigured(state.config, state.hasServerKey);
+  Boolean(state.harness?.configured);

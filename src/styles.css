@@ -3023,6 +3023,33 @@ code {
   color: #cfa35a;
 }
 
+.agent-setting-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.agent-setting-row:last-child {
+  border-bottom: 0;
+}
+
+.agent-setting-label {
+  color: var(--muted);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.agent-setting-value {
+  color: var(--text);
+  font-size: 11px;
+  text-align: right;
+  word-break: break-word;
+}
+
 .agent-privacy {
   margin: 14px 0 0;
   padding-top: 11px;

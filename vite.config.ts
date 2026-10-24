@@ -111,6 +111,12 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     headers: crossOriginHeaders,
+    // The harness mirrors projects into data/harness-workspaces and writes its
+    // dsh home under data/. Those files are runtime state, not app source, and
+    // watching them would force page reloads mid-turn.
+    watch: {
+      ignored: ['**/data/**'],
+    },
   },
   preview: {
     port: 4173,

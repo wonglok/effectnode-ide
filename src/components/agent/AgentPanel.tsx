@@ -126,13 +126,13 @@ function ToolCard({ tool }: { tool: AgentToolEvent }) {
 export function AgentPanel() {
   const messages = useAgentStore((state) => state.messages);
   const runStatus = useAgentStore((state) => state.runStatus);
-  const step = useAgentStore((state) => state.step);
+  const runStatusText = useAgentStore((state) => state.runStatusText);
   const error = useAgentStore((state) => state.error);
   const undoAvailable = useAgentStore((state) => state.undoAvailable);
   const statusLoaded = useAgentStore((state) => state.statusLoaded);
-  const hasServerKey = useAgentStore((state) => state.hasServerKey);
-  const model = useAgentStore((state) => state.config.model);
-  const baseUrl = useAgentStore((state) => state.config.baseUrl);
+  const harness = useAgentStore((state) => state.harness);
+  const model = harness?.model ?? "";
+  const provider = harness?.provider ?? "";
   const configured = useAgentStore(selectAgentConfigured);
   const send = useAgentStore((state) => state.send);
   const stop = useAgentStore((state) => state.stop);
@@ -223,15 +223,11 @@ export function AgentPanel() {
           className={`mini-dot ${configured ? "is-online" : "is-offline"}`}
         />
         <span className="agent-strip-label">
-          {configured
-            ? hasServerKey && !model
-              ? "server key"
-              : "agent ready"
-            : "not connected"}
+          {configured ? "harness ready" : "not connected"}
         </span>
         {running ? (
           <span className="agent-working">
-            <Loader2 size={10} className="spin" /> step {step}/8
+            <Loader2 size={10} className="spin" /> {runStatusText || "working…"}
           </span>
         ) : null}
         {undoAvailable && !running ? (
@@ -247,7 +243,7 @@ export function AgentPanel() {
         <div className="agent-strip-actions">
           <span
             className="agent-model-chip"
-            title={baseUrl || "No provider configured"}
+            title={provider || "No harness provider configured"}
           >
             {model || "no model"}
           </span>
@@ -276,10 +272,11 @@ export function AgentPanel() {
               <div className="agent-welcome-mark">
                 <Sparkles size={20} />
               </div>
-              <h3>Forge Agent</h3>
+              <h3>DeepSeek Harness</h3>
               <p>
-                I can read and edit this project with tools, and the preview
-                hot-reloads as I work. Ask for a feature, a fix, or a redesign.
+                I run in a server-side harness with real tools. Your project is
+                mirrored into my workspace, I edit it there, and the changes are
+                applied back to this IDE with a hot-reloaded preview.
               </p>
               <div className="agent-suggestions">
                 {SUGGESTIONS.map((suggestion) => (
@@ -295,9 +292,9 @@ export function AgentPanel() {
                 ))}
               </div>
               <div className="agent-welcome-meta">
-                <code>{model}</code>
+                <code>{provider}/{model}</code>
                 <span>·</span>
-                <span>tools: read · write · edit · list · shell</span>
+                <span>tools: read · write · edit · grep · bash</span>
               </div>
             </div>
           ) : (
@@ -305,21 +302,20 @@ export function AgentPanel() {
               <div className="agent-welcome-mark">
                 <Sparkles size={20} />
               </div>
-              <h3>Connect a model</h3>
+              <h3>Connect DeepSeek Harness</h3>
               <p>
-                The agent uses any OpenAI-compatible API — OpenAI, DeepSeek,
-                OpenRouter, or a local Ollama server. It can read files, edit
-                code, and run shell commands against this project.
+                The harness runs as a server-side subprocess and needs a DeepSeek
+                API key in the Nitro server environment.
               </p>
               <button className="solid-button small" onClick={openSetup}>
-                Configure agent
+                Harness settings
               </button>
               <div className="agent-welcome-meta">
                 {statusLoaded ? (
                   <>
-                    <span>key kept in this tab</span>
+                    <span>set DEEPSEEK_API_KEY</span>
                     <span>·</span>
-                    <span>no server storage</span>
+                    <span>restart the dev server</span>
                   </>
                 ) : (
                   <span>checking server…</span>

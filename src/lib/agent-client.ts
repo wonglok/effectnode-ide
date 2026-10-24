@@ -27,7 +27,7 @@ interface ToolCallAccumulator {
   args: string;
 }
 
-async function errorFromResponse(response: Response): Promise<Error> {
+export async function errorFromResponse(response: Response): Promise<Error> {
   let message = `Agent request failed (${response.status})`;
   try {
     const text = await response.text();

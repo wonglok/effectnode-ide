@@ -22,8 +22,8 @@ Built with **Vite 7 · Nitro 3 · TypeScript · React 19 · Zustand 5 · Tailwin
 │  Nitro API ◀── /api/projects ─── snapshot (path → text)              │
 │       └── data/projects/*.json                                       │
 │                                                                      │
-│  Agent chat ── tools ──▶ workspace store ──▶ VirtualFS               │
-│       └── /api/agent ──▶ OpenAI-compatible provider (SSE proxy)      │
+│  Agent chat ── /api/harness ──▶ DeepSeek Harness SDK subprocess     │
+│       └── mirrored workspace ──▶ snapshot diff ──▶ VirtualFS        │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -118,67 +118,65 @@ Keyboard shortcuts: `⌘S` save project · `⌘B` explorer · `⌘J` panel ·
 
 ## Agent workbench
 
-The agent is a tool-calling loop that runs **in the tab**: the model only
-proposes calls, and Forge executes them against the `VirtualFS`. Every edit goes
-through the workspace store, so open buffers reload, the file tree refreshes,
-and HMR updates the preview just like a manual edit.
+The agent is a **DeepSeek Harness runtime** driven by
+[`@deepseek-ai/dsh-sdk-client`](https://www.npmjs.com/package/@deepseek-ai/dsh-sdk-client).
+The SDK spawns a `dsh --profile sdk` subprocess inside the Nitro server and
+speaks newline-delimited JSON-RPC over stdio. The browser keeps the virtual
+project; the server owns the agent.
+
+Each turn works like this:
+
+1. The client flushes open buffers and snapshots the `VirtualFS`.
+2. `POST /api/harness` streams progress as NDJSON. The server writes the
+   snapshot into `data/harness-workspaces/<conversation>/` and points the
+   harness session at that directory.
+3. The harness agent uses its real `read`, `write`, `edit`, `grep`, `glob`, and
+   `bash` tools inside the mirrored workspace.
+4. The server collects the text files back, diffs them against the input, and
+   sends a final `result` frame with the full project plus `changedPaths`.
+5. The client applies the diff to the `VirtualFS`, so open buffers, the file
+   tree, and the preview update like a manual edit. The pre-turn snapshot stays
+   available for **Undo run**.
 
 The chat lives in its **own column beside the editor**: drag the divider between
-them to resize it, or press `⌘⇧A` to focus the composer. The preview stays
-visible on the right while the agent works, so code, chat, and the running app
-are on screen together. When a run finishes successfully, a three-note chime
-signals that the task is done.
+them to resize it, or press `⌘⇧A` to focus the composer. When a run finishes
+successfully, a three-note chime signals that the task is done.
 
-Tools exposed to the model:
+The SDK has no mid-turn cancel. Pressing **Stop** closes the runtime subprocess
+(the documented way to abandon a turn); the next turn spawns a fresh one.
+Conversation history lives in that subprocess, so restarting the dev server
+starts fresh harness sessions — the mirrored project files are unaffected.
 
-| Tool              | What it does                                             |
-| ----------------- | -------------------------------------------------------- |
-| `read_file`       | Read a UTF-8 file (40k-char output cap)                  |
-| `write_file`      | Create or overwrite a file (60k-char cap)                |
-| `replace_in_file` | Replace the first exact occurrence of a snippet         |
-| `list_files`      | List the project tree                                    |
-| `run_bash`        | Run the in-browser shell over the VFS (6k output cap)    |
-
-Paths must be absolute; `..`, null bytes, and `node_modules` are rejected. Each
-run is capped at 8 model steps. The project snapshot is captured before a run
-starts, so **Undo run** reverts every change if at least one tool wrote anything.
-Stopping a run aborts the stream and rolls the conversation back to the last
-completed message.
-
-### Connecting a provider
-
-Forge talks to any **OpenAI-compatible** `/chat/completions` endpoint. Click the
-gear in the Agent tab header (or the settings button in the welcome panel) and fill in:
-
-- **Base URL** — must be HTTPS; plain HTTP is allowed only for `localhost`.
-- **Model** — e.g. `gpt-4o-mini`, `deepseek-chat`, `openrouter/auto`.
-- **API key** — optional when a server key is configured or the URL is local
-  (e.g. Ollama at `http://localhost:11434/v1`).
-
-Presets for OpenAI, DeepSeek, OpenRouter and Ollama are built in.
+The launch overlay is [`automation.cordis.yml`](automation.cordis.yml); it is
+empty today and exists as the project's own dsh patch hook.
 
 ### Environment variables
 
-| Variable         | Purpose                                                   |
-| ---------------- | --------------------------------------------------------- |
-| `AGENT_API_KEY`  | Server-side key used when the browser sends none          |
-| `OPENAI_API_KEY` | Fallback for `AGENT_API_KEY`                              |
-| `AGENT_BASE_URL` | Default provider URL (default `https://api.openai.com/v1`) |
-| `AGENT_MODEL`    | Default model (default `gpt-4o-mini`)                      |
+| Variable               | Purpose                                                            |
+| ---------------------- | ------------------------------------------------------------------ |
+| `DEEPSEEK_API_KEY`     | Credential read by the harness subprocess                          |
+| `AGENT_API_KEY`        | Fallback credential (also used by the legacy proxy)                |
+| `OPENAI_API_KEY`       | Last fallback credential                                           |
+| `DSH_PROVIDER`         | Route provider (default `deepseek-official`)                       |
+| `DSH_MODEL`            | Route model (falls back to `AGENT_MODEL`, then `deepseek-v4-flash`) |
+| `DSH_REASONING_EFFORT` | Adapter effort (default `max`; empty string uses the model default) |
+| `DSH_MAX_TOKENS`       | Output cap (default `49152`; empty string uses the model default)   |
+| `DSH_HOME`             | Harness home (default `data/dsh-home`)                             |
+| `AGENT_MODEL`          | Model fallback when `DSH_MODEL` is unset                           |
 
-These can also be set in `.env` (see `.env.example`); Nitro loads it in dev and
-`npm start` reads it in production.
+The harness credential is read only on the server. The browser never receives
+it, and the settings dialog shows which env var supplied it.
 
 ### Security and privacy
 
-- A key typed in the browser lives in `sessionStorage` for that tab only. It is
-  sent to the local Nitro server in the `x-agent-key` header and forwarded to the
-  provider; it is never written to disk or to project snapshots.
-- The proxy rejects non-HTTPS base URLs (except localhost), rejects URLs with
-  embedded credentials, caps request size (300k chars, 80 messages, 12 tools),
-  and times out after 180 seconds.
-- The model never touches the filesystem directly — it can only call the five
-  tools above against the in-memory VFS.
+- The harness runs with the shipped `sdk` profile and its `workspace-write`
+  sandbox. Its edits are confined to the mirrored workspace.
+- Only UTF-8 text files are mirrored back. Binary files, symlinks, and files
+  over the mirror caps are listed in `skipped` and left untouched in the IDE.
+- The workspace is wiped and re-created from the current project before every
+  turn, so stale files cannot leak between turns.
+- Request size is validated server-side (500 files, 1 MB per file, 2 MB total,
+  100k-character prompt).
 
 ## How the almostnode integration works
 
@@ -215,16 +213,22 @@ tree, tabs, buffers, logs, project metadata, and layout.
 │   │   ├── starter-project.ts
 │   │   ├── bootstrap.ts    # restore project → boot runtime → hydrate stores
 │   │   ├── shell.ts        # in-browser shell over the VFS
-│   │   ├── agent-client.ts # SSE streaming client for /api/agent
-│   │   ├── agent-config.ts # provider presets + storage
-│   │   ├── agent-tools.ts  # tool schemas + VFS/bash execution
+│   │   ├── harness-client.ts # NDJSON client for /api/harness
+│   │   ├── agent-client.ts # status client + legacy SSE proxy client
+│   │   ├── agent-config.ts # legacy provider presets (kept for the proxy)
+│   │   ├── agent-tools.ts  # legacy in-tab tool schemas + VFS/bash execution
 │   │   └── api.ts          # Nitro client
 │   └── store/              # runtime · workspace · projects · ui · agent (Zustand)
 ├── server/
-│   ├── routes/api/         # Nitro routes (/api/health, /api/projects, /api/agent, /api/auth)
-│   └── utils/              # password gate + project validation/storage
+│   ├── routes/api/         # Nitro routes (/api/health, /api/projects, /api/harness, /api/auth)
+│   └── utils/
+│       ├── harness.ts      # SDK runtime, workspace mirror, turn queue
+│       └── projects.ts     # project validation/storage
 ├── shared/types.ts
-└── data/projects/          # created at runtime, git-ignored
+├── automation.cordis.yml   # per-launch dsh profile patch (empty by default)
+├── scripts/harness-smoke.mjs # SDK boot/diagnostic script
+├── data/projects/          # created at runtime, git-ignored
+└── data/harness-workspaces/ # per-conversation mirror, git-ignored
 ```
 
 ## API
@@ -238,17 +242,17 @@ tree, tabs, buffers, logs, project metadata, and layout.
 | POST   | `/api/projects`     | Create/update `{ id?, name, files }`     |
 | GET    | `/api/projects/:id` | Fetch a full snapshot                    |
 | DELETE | `/api/projects/:id` | Delete a saved project                   |
-| GET    | `/api/agent/status` | Whether a server key is configured       |
-| POST   | `/api/agent`        | Stream a chat completion from the provider |
+| GET    | `/api/agent/status` | Harness route + whether a credential is configured |
+| POST   | `/api/harness`      | Mirror the project, run one DeepSeek Harness turn (NDJSON) |
 
 All routes except `GET /api/auth` and `POST /api/auth` require
 `Authorization: Bearer <token>` when `FORGE_PASSWORD` is configured.
 
 Snapshots are capped at 500 files / 2 MB, paths must be absolute, and
 `node_modules` is rejected. Project JSON is stored on disk locally and in Vercel
-Blob when `BLOB_READ_WRITE_TOKEN` is present. `/api/agent` returns the provider's
-SSE stream verbatim and reports upstream failures as JSON with a readable
-message.
+Blob when `BLOB_READ_WRITE_TOKEN` is present. `/api/harness` streams one JSON
+object per line (`status`, `tool`, `tool-done`, then `result` or `error`) and
+reports failures as a terminal `error` frame with a readable message.
 
 ### Project archive format
 
