@@ -22,8 +22,8 @@ Built with **Vite 7 · Nitro 3 · TypeScript · React 19 · Zustand 5 · Tailwin
 │  Nitro API ◀── /api/projects ─── snapshot (path → text)              │
 │       └── data/projects/*.json                                       │
 │                                                                      │
-│  Agent chat ── /api/harness ──▶ DeepSeek Harness SDK subprocess     │
-│       └── mirrored workspace ──▶ snapshot diff ──▶ VirtualFS        │
+│  Agent chat ── tools ──▶ VirtualFS ──▶ OPFS sandbox/<ide>/projects  │
+│       └── /api/deepseek/chat/completions (JWT) ──▶ DeepSeek API     │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -118,72 +118,87 @@ Keyboard shortcuts: `⌘S` save project · `⌘B` explorer · `⌘J` panel ·
 
 ## Agent workbench
 
-The agent is a **DeepSeek Harness runtime** driven by
-[`@deepseek-ai/dsh-sdk-client`](https://www.npmjs.com/package/@deepseek-ai/dsh-sdk-client).
-The SDK spawns a `dsh --profile sdk` subprocess inside the Nitro server and
-speaks newline-delimited JSON-RPC over stdio. The browser keeps the virtual
-project; the server owns the agent.
+The agent runs **in this tab**. The browser owns the conversation, the tool
+loop, and every file operation; the only thing that leaves the tab is the model
+request, sent to a same-origin REST proxy:
 
-Each turn works like this:
+```
+browser agent ── POST /api/deepseek/chat/completions (Forge JWT) ──▶ DeepSeek API
+      │                                                              ▲
+      └── tools ──▶ VirtualFS ──▶ OPFS mirror             key inserted here
+```
 
-1. The client flushes open buffers and snapshots the `VirtualFS`.
-2. `POST /api/harness` streams progress as NDJSON. The server writes the
-   snapshot into `data/harness-workspaces/<conversation>/` and points the
-   harness session at that directory.
-3. The harness agent uses its real `read`, `write`, `edit`, `grep`, `glob`, and
-   `bash` tools inside the mirrored workspace.
-4. The server collects the text files back, diffs them against the input, and
-   sends a final `result` frame with the full project plus `changedPaths`.
-5. The client applies the diff to the `VirtualFS`, so open buffers, the file
-   tree, and the preview update like a manual edit. The pre-turn snapshot stays
-   available for **Undo run**.
+The proxy route (`server/routes/api/deepseek/chat/completions.post.ts`) accepts
+only the Forge JWT issued by the unlock gate. It validates the JWT with
+`authGuard`, inserts `DEEPSEEK_API_KEY` (or the `AGENT_API_KEY` fallback), and
+streams the upstream SSE response back unchanged. Callers cannot supply their
+own upstream URL, and the key never reaches the browser.
+
+Each turn:
+
+1. The store sends the system prompt, conversation, and tool schemas to the proxy.
+2. The response streams into the assistant bubble; any `tool_calls` are executed
+   in order against the almostnode `VirtualFS`.
+3. File tools write through `IdeRuntime`, which mirrors every mutation into OPFS.
+4. `todo_write` updates the pinned task panel instead of producing a tool card.
+5. The loop repeats until the model answers without tool calls (max 8 steps).
+6. The pre-turn snapshot powers **Undo run**; a chime marks completion.
 
 The chat lives in its **own column beside the editor**: drag the divider between
-them to resize it, or press `⌘⇧A` to focus the composer. When a run finishes
-successfully, a three-note chime signals that the task is done.
+them to resize it, or press `⌘⇧A` to focus the composer. Tool calls appear as
+colour-coded cards (read, write, shell, search) with status accents, file chips,
+expandable output, and a running scan line. While a turn is active, an animated
+SVG loader sits at the bottom of the chat column and reports the current step.
+Pressing **Stop** aborts the fetch and rolls the conversation back to the last
+completed message.
 
-The chat UI renders the harness's own plan: `todo_write` snapshots feed a pinned
-task panel with live progress, per-item status, and auto-collapse on completion.
-Tool calls appear as colour-coded cards (read, write, shell, search) with status
-accents, file chips, expandable output, and a running scan line. While a turn is
-active, an animated SVG loader sits at the bottom of the chat column and reports
-the current harness step.
+## OPFS project storage
 
-The SDK has no mid-turn cancel. Pressing **Stop** closes the runtime subprocess
-(the documented way to abandon a turn); the next turn spawns a fresh one.
-Conversation history lives in that subprocess, so restarting the dev server
-starts fresh harness sessions — the mirrored project files are unaffected.
+Project code is persisted in the browser's Origin Private File System:
 
-The launch overlay is [`automation.cordis.yml`](automation.cordis.yml); it is
-empty today and exists as the project's own dsh patch hook.
+```
+sandbox/<ide-sandbox-id>/projects/<project-id>/<project files…>
+sandbox/<ide-sandbox-id>/projects/<project-id>/.forge/project.json
+```
+
+- `<ide-sandbox-id>` is generated once per browser profile and stored in
+  `localStorage` as `forge.sandboxId`.
+- Saved projects use their server id; unsaved projects get a stable `local-…`
+  id stored as `forge.localProject`.
+- Boot hydrates OPFS first, so reloads restore unsaved work without waiting for
+  a project fetch. If OPFS has no files, the Nitro snapshot is fetched and used
+  to seed OPFS; otherwise the starter project is created and seeded.
+- Every `VirtualFS` write/create/rename/delete is mirrored through
+  `IdeRuntime.setFileSink()`. On project switch, open, new, import, or undo, the
+  whole folder is rewritten.
+- The Nitro snapshot (`Save`) remains as a server-side backup and shareable
+  project record; OPFS is the live local store.
+- Browsers without OPFS fall back to the previous in-memory behaviour; the sink
+  no-ops and the app still runs.
 
 ### Environment variables
 
-| Variable               | Purpose                                                            |
-| ---------------------- | ------------------------------------------------------------------ |
-| `DEEPSEEK_API_KEY`     | Credential read by the harness subprocess                          |
-| `AGENT_API_KEY`        | Fallback credential (also used by the legacy proxy)                |
-| `OPENAI_API_KEY`       | Last fallback credential                                           |
-| `DSH_PROVIDER`         | Route provider (default `deepseek-official`)                       |
-| `DSH_MODEL`            | Route model (falls back to `AGENT_MODEL`, then `deepseek-v4-flash`) |
-| `DSH_REASONING_EFFORT` | Adapter effort (default `max`; empty string uses the model default) |
-| `DSH_MAX_TOKENS`       | Output cap (default `49152`; empty string uses the model default)   |
-| `DSH_HOME`             | Harness home (default `data/dsh-home`)                             |
-| `AGENT_MODEL`          | Model fallback when `DSH_MODEL` is unset                           |
-
-The harness credential is read only on the server. The browser never receives
-it, and the settings dialog shows which env var supplied it.
+| Variable            | Purpose                                                |
+| ------------------- | ------------------------------------------------------ |
+| `DEEPSEEK_API_KEY`  | Credential inserted by the proxy                       |
+| `DEEPSEEK_MODEL`    | Model sent upstream (default `deepseek-flash`)         |
+| `DEEPSEEK_BASE_URL` | Upstream base URL (default `https://api.deepseek.com`) |
+| `AGENT_API_KEY`     | Credential fallback when `DEEPSEEK_API_KEY` is empty   |
+| `OPENAI_API_KEY`    | Last credential fallback                               |
+| `AGENT_MODEL`       | Model fallback when `DEEPSEEK_MODEL` is empty          |
+| `AGENT_BASE_URL`    | Base URL fallback when `DEEPSEEK_BASE_URL` is empty    |
+| `FORGE_PASSWORD`    | Password that gates the UI and issues the proxy JWT    |
 
 ### Security and privacy
 
-- The harness runs with the shipped `sdk` profile and its `workspace-write`
-  sandbox. Its edits are confined to the mirrored workspace.
-- Only UTF-8 text files are mirrored back. Binary files, symlinks, and files
-  over the mirror caps are listed in `skipped` and left untouched in the IDE.
-- The workspace is wiped and re-created from the current project before every
-  turn, so stale files cannot leak between turns.
-- Request size is validated server-side (500 files, 1 MB per file, 2 MB total,
-  100k-character prompt).
+- The proxy requires a valid Forge JWT; unauthenticated requests get `403`
+  (development) or `401` (production) with `X-Forge-Auth: required`.
+- The DeepSeek key is server-only. The browser never receives it.
+- The upstream URL is server-configured; request bodies cannot redirect it.
+- The proxy caps conversations at 80 messages / 300k characters and tools at 16.
+- Tool paths must be absolute; `..`, null bytes, and `node_modules` are rejected.
+- OPFS data is origin-scoped. The app requests persistent storage so the browser
+  is less likely to evict it.
 
 ## How the almostnode integration works
 
@@ -218,25 +233,22 @@ tree, tabs, buffers, logs, project metadata, and layout.
 │   ├── lib/
 │   │   ├── runtime.ts      # VirtualFS + ViteDevServer + service worker
 │   │   ├── starter-project.ts
-│   │   ├── bootstrap.ts    # restore project → boot runtime → hydrate stores
+│   │   ├── bootstrap.ts    # OPFS → Nitro → starter hydration; binds the sink
 │   │   ├── shell.ts        # in-browser shell over the VFS
-│   │   ├── harness-client.ts # NDJSON client for /api/harness
-│   │   ├── agent-client.ts # status client + legacy SSE proxy client
-│   │   ├── agent-config.ts # legacy provider presets (kept for the proxy)
-│   │   ├── agent-tools.ts  # legacy in-tab tool schemas + VFS/bash execution
+│   │   ├── opfs.ts         # OPFS project store + runtime file sink
+│   │   ├── agent-client.ts # SSE client for the DeepSeek proxy
+│   │   ├── agent-tools.ts  # in-tab tool schemas + VFS/bash execution
 │   │   └── api.ts          # Nitro client
 │   └── store/              # runtime · workspace · projects · ui · agent (Zustand)
 ├── server/
-│   ├── routes/api/         # Nitro routes (/api/health, /api/projects, /api/harness, /api/auth)
-│   └── utils/
-│       ├── harness.ts      # SDK runtime, workspace mirror, turn queue
-│       └── projects.ts     # project validation/storage
+│   ├── routes/api/         # Nitro routes (/api/health, /api/projects, /api/deepseek, /api/auth)
+│   └── utils/              # password gate + project validation/storage
 ├── shared/types.ts
-├── automation.cordis.yml   # per-launch dsh profile patch (empty by default)
-├── scripts/harness-smoke.mjs # SDK boot/diagnostic script
-├── data/projects/          # created at runtime, git-ignored
-└── data/harness-workspaces/ # per-conversation mirror, git-ignored
+└── data/projects/          # Nitro snapshots, created at runtime, git-ignored
 ```
+
+Project code itself lives in the browser's OPFS; `data/projects/` is the
+server-side snapshot backup written by **Save**.
 
 ## API
 
@@ -249,17 +261,17 @@ tree, tabs, buffers, logs, project metadata, and layout.
 | POST   | `/api/projects`     | Create/update `{ id?, name, files }`     |
 | GET    | `/api/projects/:id` | Fetch a full snapshot                    |
 | DELETE | `/api/projects/:id` | Delete a saved project                   |
-| GET    | `/api/agent/status` | Harness route + whether a credential is configured |
-| POST   | `/api/harness`      | Mirror the project, run one DeepSeek Harness turn (NDJSON) |
+| GET    | `/api/agent/status` | Proxy route + credential status          |
+| POST   | `/api/deepseek/chat/completions` | JWT-authenticated DeepSeek SSE proxy |
 
 All routes except `GET /api/auth` and `POST /api/auth` require
 `Authorization: Bearer <token>` when `FORGE_PASSWORD` is configured.
 
 Snapshots are capped at 500 files / 2 MB, paths must be absolute, and
 `node_modules` is rejected. Project JSON is stored on disk locally and in Vercel
-Blob when `BLOB_READ_WRITE_TOKEN` is present. `/api/harness` streams one JSON
-object per line (`status`, `tool`, `tool-done`, then `result` or `error`) and
-reports failures as a terminal `error` frame with a readable message.
+Blob when `BLOB_READ_WRITE_TOKEN` is present. The DeepSeek proxy validates the
+Forge JWT, inserts the server-side key, and returns the upstream SSE stream
+unchanged; the browser agent executes tools locally and mirrors files to OPFS.
 
 ### Project archive format
 

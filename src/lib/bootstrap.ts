@@ -1,53 +1,166 @@
-import type { ProjectSnapshot } from '../../shared/types';
+import type { ProjectMeta, ProjectSnapshot } from '../../shared/types';
 import { useProjectStore, CURRENT_PROJECT_KEY } from '@/store/projects';
 import { useRuntimeStore } from '@/store/runtime';
 import { useWorkspaceStore } from '@/store/workspace';
 import { projectApi } from './api';
+import {
+  bindOpfsProject,
+  createLocalProject,
+  opfsFileSink,
+  opfsProjectStore,
+  readLocalProject,
+  requestPersistentStorage,
+  type LocalProjectMeta,
+  type OpfsProject,
+  type ProjectManifest,
+} from './opfs';
 import { runtime } from './runtime';
-import { STARTER_FILES } from './starter-project';
+import { STARTER_FILES, STARTER_PROJECT_NAME } from './starter-project';
 
 let bootstrapPromise: Promise<void> | null = null;
 
 /**
- * Fetch saved projects, restore the last one (if any), boot almostnode and
- * hydrate the editor stores. Safe to call more than once.
+ * Hydrate the IDE from OPFS first (fast and offline-capable), then from the
+ * Nitro snapshot, then the starter template. Every path binds the runtime's
+ * file sink so subsequent edits land in
+ * `sandbox/<sandbox-id>/projects/<project-id>/**`.
  */
 export function bootstrap(): Promise<void> {
   bootstrapPromise ??= run();
   return bootstrapPromise;
 }
 
-async function run(): Promise<void> {
-  await useProjectStore.getState().loadProjects();
+type HydrationTarget =
+  | { kind: 'saved'; meta: ProjectMeta }
+  | { kind: 'local'; meta: LocalProjectMeta };
 
-  let files: Record<string, string> = STARTER_FILES;
-  let restored: ProjectSnapshot | null = null;
+function metaFromSnapshot(snapshot: ProjectSnapshot): ProjectMeta {
+  return {
+    id: snapshot.id,
+    name: snapshot.name,
+    createdAt: snapshot.createdAt,
+    updatedAt: snapshot.updatedAt,
+    fileCount: snapshot.fileCount,
+  };
+}
 
-  const savedId = localStorage.getItem(CURRENT_PROJECT_KEY);
-  if (savedId) {
+function savedMetaFor(
+  id: string,
+  manifest: ProjectManifest | null,
+  files: Record<string, string>
+): ProjectMeta {
+  const known = useProjectStore.getState().projects.find((project) => project.id === id);
+  if (known) return known;
+  const epoch = new Date(0).toISOString();
+  return {
+    id,
+    name: manifest?.name ?? 'Saved project',
+    createdAt: manifest?.createdAt ?? epoch,
+    updatedAt: manifest?.updatedAt ?? epoch,
+    fileCount: Object.keys(files).length,
+  };
+}
+
+async function readCached(projectId: string): Promise<OpfsProject | null> {
+  try {
+    return await opfsProjectStore.read(projectId);
+  } catch (error) {
+    runtime.log(
+      'warn',
+      `Could not read OPFS project ${projectId}: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+    return null;
+  }
+}
+
+async function hydrate(
+  files: Record<string, string>,
+  target: HydrationTarget,
+  seedOpfs: boolean
+): Promise<void> {
+  const projectId = target.meta.id;
+  const name = target.meta.name;
+
+  bindOpfsProject(projectId, name);
+  runtime.setFileSink(opfsFileSink);
+
+  if (seedOpfs) {
     try {
-      const snapshot = await projectApi.get(savedId);
-      files = snapshot.files;
-      restored = snapshot;
+      await opfsProjectStore.replaceAll(projectId, files, {
+        name,
+        createdAt: target.meta.createdAt,
+        updatedAt: target.meta.updatedAt,
+      });
     } catch (error) {
       runtime.log(
         'warn',
-        `Could not restore the last project: ${error instanceof Error ? error.message : String(error)}`
+        `Could not seed OPFS storage: ${error instanceof Error ? error.message : String(error)}`
+      );
+    }
+  }
+
+  await useRuntimeStore.getState().boot(files);
+  useWorkspaceStore.getState().loadFiles(files);
+
+  if (target.kind === 'saved') {
+    useProjectStore.getState().setCurrent(target.meta);
+    runtime.log(
+      'info',
+      `Restored “${name}” from ${seedOpfs ? 'the Nitro server' : 'OPFS'}`
+    );
+  } else {
+    useProjectStore.setState({
+      currentId: null,
+      name,
+      createdAt: target.meta.createdAt,
+      updatedAt: target.meta.updatedAt,
+    });
+    runtime.log('info', `Restored “${name}” from OPFS`);
+  }
+}
+
+async function run(): Promise<void> {
+  await useProjectStore.getState().loadProjects();
+  void requestPersistentStorage();
+
+  const savedId = localStorage.getItem(CURRENT_PROJECT_KEY);
+  if (savedId) {
+    const cached = await readCached(savedId);
+    if (cached && Object.keys(cached.files).length > 0) {
+      await hydrate(
+        cached.files,
+        { kind: 'saved', meta: savedMetaFor(savedId, cached.manifest, cached.files) },
+        false
+      );
+      return;
+    }
+
+    try {
+      const snapshot = await projectApi.get(savedId);
+      await hydrate(snapshot.files, { kind: 'saved', meta: metaFromSnapshot(snapshot) }, true);
+      return;
+    } catch (error) {
+      runtime.log(
+        'warn',
+        `Could not restore the last project: ${
+          error instanceof Error ? error.message : String(error)
+        }`
       );
       localStorage.removeItem(CURRENT_PROJECT_KEY);
     }
   }
 
-  await useRuntimeStore.getState().boot(files);
-
-  // The editor should work even when the preview runtime failed to start.
-  useWorkspaceStore.getState().loadFiles(files);
-
-  if (restored) {
-    useProjectStore.getState().setCurrent(restored);
-    runtime.log('info', `Restored “${restored.name}” from the Nitro server`);
-  } else {
-    useProjectStore.getState().setCurrent(null);
-    runtime.log('info', 'Loaded the MY COMPANY starter project');
+  const local = readLocalProject();
+  if (local) {
+    const cached = await readCached(local.id);
+    if (cached && Object.keys(cached.files).length > 0) {
+      await hydrate(cached.files, { kind: 'local', meta: local }, false);
+      return;
+    }
   }
+
+  const starter = createLocalProject(STARTER_PROJECT_NAME);
+  await hydrate(STARTER_FILES, { kind: 'local', meta: starter }, true);
 }

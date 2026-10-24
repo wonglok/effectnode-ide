@@ -2834,7 +2834,7 @@ code {
   }
 }
 
-/* ── Harness dock: task plan + running loader ─────────────── */
+/* ── Agent dock: task plan + running loader ───────────────── */
 
 .agent-dock {
   flex: 0 0 auto;

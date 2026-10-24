@@ -254,7 +254,7 @@ function TodoPanel() {
   );
 }
 
-function HarnessLoader({ label }: { label: string }) {
+function AgentLoader({ label }: { label: string }) {
   return (
     <div className="agent-loader" role="status" aria-live="polite">
       <svg
@@ -283,7 +283,7 @@ function HarnessLoader({ label }: { label: string }) {
       </svg>
       <span className="agent-loader-copy">
         <strong>{label || "Working…"}</strong>
-        <span>DeepSeek Harness is running its tools</span>
+        <span>Browser agent · DeepSeek proxy · JWT auth</span>
       </span>
       <span className="agent-loader-bars" aria-hidden="true">
         <i />
@@ -301,9 +301,9 @@ export function AgentPanel() {
   const error = useAgentStore((state) => state.error);
   const undoAvailable = useAgentStore((state) => state.undoAvailable);
   const statusLoaded = useAgentStore((state) => state.statusLoaded);
-  const harness = useAgentStore((state) => state.harness);
-  const model = harness?.model ?? "";
-  const provider = harness?.provider ?? "";
+  const status = useAgentStore((state) => state.status);
+  const model = status?.model ?? "";
+  const provider = status?.provider ?? "";
   const configured = useAgentStore(selectAgentConfigured);
   const send = useAgentStore((state) => state.send);
   const stop = useAgentStore((state) => state.stop);
@@ -394,7 +394,7 @@ export function AgentPanel() {
           className={`mini-dot ${configured ? "is-online" : "is-offline"}`}
         />
         <span className="agent-strip-label">
-          {configured ? "harness ready" : "not connected"}
+          {configured ? "agent ready" : "not connected"}
         </span>
         {running ? (
           <span className="agent-working">
@@ -414,7 +414,7 @@ export function AgentPanel() {
         <div className="agent-strip-actions">
           <span
             className="agent-model-chip"
-            title={provider || "No harness provider configured"}
+            title={status?.proxyUrl || "No DeepSeek proxy configured"}
           >
             {model || "no model"}
           </span>
@@ -443,11 +443,11 @@ export function AgentPanel() {
               <div className="agent-welcome-mark">
                 <Sparkles size={20} />
               </div>
-              <h3>DeepSeek Harness</h3>
+              <h3>Forge Agent</h3>
               <p>
-                I run in a server-side harness with real tools. Your project is
-                mirrored into my workspace, I edit it there, and the changes are
-                applied back to this IDE with a hot-reloaded preview.
+                I run in this tab with tools against your project, and the preview
+                hot-reloads as I work. My model calls go through the server's
+                JWT-authenticated DeepSeek proxy, so the API key stays server-side.
               </p>
               <div className="agent-suggestions">
                 {SUGGESTIONS.map((suggestion) => (
@@ -465,7 +465,7 @@ export function AgentPanel() {
               <div className="agent-welcome-meta">
                 <code>{provider}/{model}</code>
                 <span>·</span>
-                <span>tools: read · write · edit · grep · bash</span>
+                <span>tools: read · write · edit · list · shell · plan</span>
               </div>
             </div>
           ) : (
@@ -473,13 +473,13 @@ export function AgentPanel() {
               <div className="agent-welcome-mark">
                 <Sparkles size={20} />
               </div>
-              <h3>Connect DeepSeek Harness</h3>
+              <h3>Connect the DeepSeek proxy</h3>
               <p>
-                The harness runs as a server-side subprocess and needs a DeepSeek
-                API key in the Nitro server environment.
+                The browser agent calls a same-origin REST proxy with your Forge
+                JWT. The DeepSeek API key stays in the Nitro server environment.
               </p>
               <button className="solid-button small" onClick={openSetup}>
-                Harness settings
+                Proxy settings
               </button>
               <div className="agent-welcome-meta">
                 {statusLoaded ? (
@@ -560,7 +560,7 @@ export function AgentPanel() {
 
       <div className="agent-dock">
         <TodoPanel />
-        {running ? <HarnessLoader label={runStatusText ?? ""} /> : null}
+        {running ? <AgentLoader label={runStatusText ?? ""} /> : null}
       </div>
 
       <div className={`agent-composer ${running ? "is-running" : ""}`}>

@@ -4,13 +4,11 @@ import type {
   AgentToolCall,
   AgentToolDefinition,
 } from '../../shared/types';
-import type { AgentConfig } from './agent-config';
 import { authHeaders, handleUnauthorized } from './auth-token';
 
 export interface AgentStreamOptions {
   messages: AgentChatMessage[];
   tools: AgentToolDefinition[];
-  config: AgentConfig;
   signal: AbortSignal;
   onDelta: (chunk: string) => void;
 }
@@ -64,24 +62,17 @@ function finalizeToolCalls(accumulators: Map<number, ToolCallAccumulator>): Agen
 }
 
 export async function streamAgentChat(options: AgentStreamOptions): Promise<AgentStreamResult> {
-  const { messages, tools, config, signal, onDelta } = options;
+  const { messages, tools, signal, onDelta } = options;
 
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    Accept: 'text/event-stream',
-    ...authHeaders(),
-  };
-  if (config.apiKey.trim()) headers['x-agent-key'] = config.apiKey.trim();
-
-  const response = await fetch('/api/agent', {
+  const response = await fetch('/api/deepseek/chat/completions', {
     method: 'POST',
-    headers,
-    body: JSON.stringify({
-      messages,
-      tools,
-      model: config.model,
-      baseUrl: config.baseUrl,
-    }),
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+      // The proxy accepts only the Forge JWT; it inserts the DeepSeek key.
+      ...authHeaders(),
+    },
+    body: JSON.stringify({ messages, tools, temperature: 0.2, stream: true }),
     signal,
   });
 

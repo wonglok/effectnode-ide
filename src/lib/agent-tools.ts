@@ -343,6 +343,38 @@ export const AGENT_TOOLS: AgentToolDefinition[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "todo_write",
+      description:
+        "Replace the whole visible task plan. Send the complete list every time. Use this for multi-step work, mark the current task in_progress, and mark tasks completed as soon as they finish.",
+      parameters: {
+        type: "object",
+        properties: {
+          todos: {
+            type: "array",
+            description: "The complete ordered task list.",
+            items: {
+              type: "object",
+              properties: {
+                content: {
+                  type: "string",
+                  description: "Short, concrete task description.",
+                },
+                status: {
+                  type: "string",
+                  enum: ["pending", "in_progress", "completed"],
+                },
+              },
+              required: ["content", "status"],
+            },
+          },
+        },
+        required: ["todos"],
+      },
+    },
+  },
 ];
 
 export async function executeAgentTool(
@@ -373,6 +405,8 @@ export async function executeAgentTool(
       return listFilesTool(args);
     case "run_bash":
       return runBashTool(args);
+    case "todo_write":
+      return fail(name, "todo_write is handled by the agent store");
     default:
       return fail(name, `Unknown tool: ${name}`);
   }
@@ -412,6 +446,8 @@ export function describeToolCall(call: AgentToolCall): ToolCallPreview {
         name,
         summary: `Run ${typeof args.command === "string" ? args.command : "command"}`,
       };
+    case "todo_write":
+      return { name, summary: "Update the task plan" };
     default:
       return { name, summary: name };
   }
@@ -443,9 +479,12 @@ Tools:
 - replace_in_file(path, old_text, new_text): replace the first exact occurrence. Prefer this for small edits.
 - list_files(path): list a directory.
 - run_bash(command): run a command in the virtual shell.
+- todo_write(todos): replace the visible task plan. The UI renders this list live.
 
 Rules:
 - Please read /AGENTS.md at the project root before planning or editing, and follow its project-specific instructions. If it is missing, continue with the rules below.
+- For work with more than one step, call todo_write first with the complete plan, mark the task you are working on in_progress, and mark each task completed as soon as it is done. Keep exactly one task in_progress unless the work is genuinely parallel.
+- Files are persisted in OPFS under sandbox/<sandbox-id>/projects/<project-id>/ and mirrored to the server when the user saves. Treat the virtual file system as the source of truth.
 - Paths are absolute (start with /). Never touch node_modules.
 - Relative imports MUST include the file extension, e.g. import App from './App.tsx' and import './styles.css'. The in-browser server does not resolve extensionless imports.
 - React, Zustand, three, and Tailwind CSS ('@tailwindcss/browser', when mapped by the project) come from an import map. Do NOT import any other npm package and do not add dependencies; there is no npm install in the preview. Use Zustand for shared React state, and prefer Tailwind utilities for new UI. The starter's primary color is Tiffany Blue: use 'bg-primary', 'text-primary', or '--ef-primary' (#0abab5). Otherwise style with plain CSS in /src/styles.css or inline styles.

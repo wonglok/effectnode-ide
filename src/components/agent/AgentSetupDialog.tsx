@@ -1,4 +1,4 @@
-import { CircleAlert, CircleCheck, Server } from 'lucide-react';
+import { CircleAlert, CircleCheck, Server, ShieldCheck } from 'lucide-react';
 import { useAgentStore } from '@/store/agent';
 import { Modal } from '../Dialogs';
 
@@ -11,17 +11,16 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-function HarnessSettings() {
-  const harness = useAgentStore((state) => state.harness);
+function ProxySettings() {
+  const status = useAgentStore((state) => state.status);
   const statusLoaded = useAgentStore((state) => state.statusLoaded);
   const closeSetup = useAgentStore((state) => state.closeSetup);
-
-  const configured = Boolean(harness?.configured);
+  const configured = Boolean(status?.configured);
 
   return (
     <Modal
-      title="DeepSeek Harness"
-      subtitle="The agent runs as a server-side dsh subprocess driven by @deepseek-ai/dsh-sdk-client."
+      title="DeepSeek proxy"
+      subtitle="The browser agent calls a same-origin REST route with your Forge JWT."
       onClose={closeSetup}
       width={560}
       footer={
@@ -37,7 +36,7 @@ function HarnessSettings() {
       ) : configured ? (
         <div className="agent-server-key">
           <CircleCheck size={12} />
-          Harness ready. The credential is read on the server and never sent to this tab.
+          Proxy ready. The DeepSeek key is inserted server-side and never enters this tab.
         </div>
       ) : (
         <div className="agent-form-warning">
@@ -48,20 +47,22 @@ function HarnessSettings() {
       )}
 
       <div className="agent-form">
-        <Row label="Provider" value={harness?.provider ?? 'deepseek-official'} />
-        <Row label="Model" value={harness?.model ?? 'deepseek-v4-flash'} />
-        <Row label="Reasoning effort" value={harness?.reasoningEffort ?? 'model default'} />
-        <Row label="Max output tokens" value={String(harness?.maxTokens ?? 'model default')} />
-        <Row label="Credential source" value={harness?.keySource ?? 'not configured'} />
+        <Row label="Provider" value={status?.provider ?? 'deepseek'} />
+        <Row label="Model" value={status?.model ?? 'deepseek-flash'} />
+        <Row
+          label="Proxy URL"
+          value={status?.proxyUrl ?? '/api/deepseek/chat/completions'}
+        />
+        <Row label="Proxy auth" value="Forge JWT · Authorization: Bearer …" />
+        <Row label="Credential source" value={status?.keySource ?? 'not configured'} />
+        <Row label="Project files" value="OPFS · sandbox/<ide>/projects/<project>" />
       </div>
 
       <p className="agent-privacy">
-        Tune the route with <code>DSH_PROVIDER</code>, <code>DSH_MODEL</code>,{' '}
-        <code>DSH_REASONING_EFFORT</code>, and <code>DSH_MAX_TOKENS</code>. When{' '}
-        <code>DSH_MODEL</code> is unset the harness falls back to{' '}
-        <code>AGENT_MODEL</code>, then <code>deepseek-v4-flash</code>. Each turn mirrors
-        the virtual project into <code>data/harness-workspaces/</code>; only text files
-        inside that workspace are mirrored back.
+        <ShieldCheck size={11} /> The proxy rejects requests without the Forge JWT issued by the
+        unlock gate. Only the proxy holds the DeepSeek key. Configure the route with{' '}
+        <code>DEEPSEEK_MODEL</code> and <code>DEEPSEEK_BASE_URL</code>;{' '}
+        <code>AGENT_MODEL</code> remains the fallback.
       </p>
     </Modal>
   );
@@ -70,5 +71,5 @@ function HarnessSettings() {
 export function AgentSetupDialog() {
   const open = useAgentStore((state) => state.setupOpen);
   if (!open) return null;
-  return <HarnessSettings />;
+  return <ProxySettings />;
 }

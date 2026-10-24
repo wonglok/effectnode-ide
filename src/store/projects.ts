@@ -1,6 +1,14 @@
 import { create } from 'zustand';
 import type { ProjectMeta, ProjectSnapshot } from '../../shared/types';
 import { projectApi } from '@/lib/api';
+import {
+  bindOpfsProject,
+  clearLocalProject,
+  createLocalProject,
+  opfsProjectStore,
+  readLocalProject,
+  updateOpfsProjectName,
+} from '@/lib/opfs';
 import { runtime } from '@/lib/runtime';
 import { STARTER_FILES, STARTER_PROJECT_NAME } from '@/lib/starter-project';
 import { restartWithFiles } from './runtime';
@@ -8,6 +16,16 @@ import { useUiStore } from './ui';
 import { useWorkspaceStore } from './workspace';
 
 export const CURRENT_PROJECT_KEY = 'forge.currentProject';
+
+function metaOf(snapshot: ProjectSnapshot): ProjectMeta {
+  return {
+    id: snapshot.id,
+    name: snapshot.name,
+    createdAt: snapshot.createdAt,
+    updatedAt: snapshot.updatedAt,
+    fileCount: snapshot.fileCount,
+  };
+}
 
 interface ProjectState {
   projects: ProjectMeta[];
@@ -66,6 +84,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       createdAt: meta.createdAt,
       updatedAt: meta.updatedAt,
     });
+    updateOpfsProjectName(meta.name);
   },
 
   save: async (name, options) => {
@@ -80,11 +99,45 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
     set({ saving: true });
     try {
+      const localProject = get().currentId ? null : readLocalProject();
       const meta = await projectApi.save({
         id: options?.asNew ? undefined : get().currentId ?? undefined,
         name: projectName,
         files,
       });
+
+      // A local project becomes a server project: move its OPFS folder from
+      // the local id to the server-assigned id before rebinding.
+      if (localProject) {
+        try {
+          await opfsProjectStore.moveProject(localProject.id, meta.id);
+          clearLocalProject();
+        } catch (error) {
+          runtime.log(
+            'warn',
+            `Could not move the OPFS project folder: ${
+              error instanceof Error ? error.message : String(error)
+            }`
+          );
+        }
+      }
+
+      bindOpfsProject(meta.id, meta.name);
+      try {
+        await opfsProjectStore.replaceAll(meta.id, files, {
+          name: meta.name,
+          createdAt: meta.createdAt,
+          updatedAt: meta.updatedAt,
+        });
+      } catch (error) {
+        runtime.log(
+          'warn',
+          `Could not persist the project to OPFS: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      }
+
       localStorage.setItem(CURRENT_PROJECT_KEY, meta.id);
       set({
         saving: false,
@@ -95,7 +148,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         updatedAt: meta.updatedAt,
         projects: [meta, ...get().projects.filter((project) => project.id !== meta.id)],
       });
-      runtime.log('success', `Saved “${meta.name}” · ${meta.fileCount} files → Nitro storage`);
+      runtime.log('success', `Saved “${meta.name}” · ${meta.fileCount} files → Nitro + OPFS`);
       useUiStore.getState().toast(`Saved “${meta.name}”`);
       return true;
     } catch (error) {
@@ -111,20 +164,52 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     if (get().openingId) return false;
     set({ openingId: id });
     try {
-      const snapshot: ProjectSnapshot = await projectApi.get(id);
+      const known = get().projects.find((project) => project.id === id);
+      let cached: Awaited<ReturnType<typeof opfsProjectStore.read>> = null;
+      try {
+        cached = await opfsProjectStore.read(id);
+      } catch {
+        // OPFS unavailable; fall back to the Nitro snapshot below.
+      }
+
+      let files: Record<string, string>;
+      let meta: ProjectMeta;
+      let source: 'OPFS' | 'Nitro';
+
+      if (cached && Object.keys(cached.files).length > 0) {
+        files = cached.files;
+        const epoch = new Date(0).toISOString();
+        meta = known ?? {
+          id,
+          name: cached.manifest?.name ?? 'Saved project',
+          createdAt: cached.manifest?.createdAt ?? epoch,
+          updatedAt: cached.manifest?.updatedAt ?? epoch,
+          fileCount: Object.keys(cached.files).length,
+        };
+        source = 'OPFS';
+      } else {
+        const snapshot: ProjectSnapshot = await projectApi.get(id);
+        files = snapshot.files;
+        meta = metaOf(snapshot);
+        source = 'Nitro';
+      }
+
       useWorkspaceStore.getState().flush();
-      await restartWithFiles(snapshot.files);
-      useWorkspaceStore.getState().loadFiles(snapshot.files);
-      localStorage.setItem(CURRENT_PROJECT_KEY, snapshot.id);
+      bindOpfsProject(meta.id, meta.name);
+      // replaceProject mirrors the opened files into OPFS via the bound sink.
+      await restartWithFiles(files);
+      useWorkspaceStore.getState().loadFiles(files);
+      clearLocalProject();
+      localStorage.setItem(CURRENT_PROJECT_KEY, meta.id);
       set({
         openingId: null,
-        currentId: snapshot.id,
-        name: snapshot.name,
-        createdAt: snapshot.createdAt,
-        updatedAt: snapshot.updatedAt,
+        currentId: meta.id,
+        name: meta.name,
+        createdAt: meta.createdAt,
+        updatedAt: meta.updatedAt,
       });
-      runtime.log('success', `Opened “${snapshot.name}” · ${snapshot.fileCount} files`);
-      useUiStore.getState().toast(`Opened “${snapshot.name}”`);
+      runtime.log('success', `Opened “${meta.name}” · ${meta.fileCount} files from ${source}`);
+      useUiStore.getState().toast(`Opened “${meta.name}”`);
       return true;
     } catch (error) {
       set({ openingId: null });
@@ -138,16 +223,39 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   remove: async (id) => {
     try {
       await projectApi.remove(id);
+      try {
+        await opfsProjectStore.deleteProject(id);
+      } catch {
+        // Best effort; the server copy is already gone.
+      }
+
       const project = get().projects.find((entry) => entry.id === id);
-      set({
-        projects: get().projects.filter((entry) => entry.id !== id),
-        ...(get().currentId === id
-          ? { currentId: null, createdAt: null, updatedAt: null, name: `${get().name} (unsaved)` }
-          : {}),
-      });
+      const wasCurrent = get().currentId === id;
+      set({ projects: get().projects.filter((entry) => entry.id !== id) });
+
       if (localStorage.getItem(CURRENT_PROJECT_KEY) === id) {
         localStorage.removeItem(CURRENT_PROJECT_KEY);
       }
+
+      if (wasCurrent) {
+        // Keep the files the user is looking at as a new OPFS-backed local
+        // project instead of discarding them.
+        const local = createLocalProject(`${get().name} (unsaved)`);
+        const files = runtime.snapshot();
+        bindOpfsProject(local.id, local.name);
+        try {
+          await opfsProjectStore.replaceAll(local.id, files, { name: local.name });
+        } catch {
+          // OPFS is optional.
+        }
+        set({
+          currentId: null,
+          name: local.name,
+          createdAt: local.createdAt,
+          updatedAt: local.updatedAt,
+        });
+      }
+
       runtime.log('info', `Deleted saved project “${project?.name ?? id}”`);
       useUiStore.getState().toast('Saved project deleted');
       return true;
@@ -161,35 +269,40 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
 
   newProject: async (name) => {
     useWorkspaceStore.getState().flush();
+    const projectName = name?.trim() || 'untitled';
+    const local = createLocalProject(projectName);
+    localStorage.removeItem(CURRENT_PROJECT_KEY);
+    bindOpfsProject(local.id, local.name);
+    // replaceProject mirrors the starter files into the new OPFS folder.
     await restartWithFiles(STARTER_FILES);
     useWorkspaceStore.getState().loadFiles(STARTER_FILES);
-    localStorage.removeItem(CURRENT_PROJECT_KEY);
     set({
       currentId: null,
-      name: name?.trim() || 'untitled',
-      createdAt: null,
-      updatedAt: null,
+      name: local.name,
+      createdAt: local.createdAt,
+      updatedAt: local.updatedAt,
     });
-    runtime.log('info', 'Started a fresh project from the starter template');
+    runtime.log('info', `Started “${local.name}” in OPFS`);
     useUiStore.getState().toast('New project ready');
   },
 
   importProject: async (name, files) => {
     useWorkspaceStore.getState().flush();
+    const projectName = name.trim() || 'imported-project';
+    const local = createLocalProject(projectName);
+    localStorage.removeItem(CURRENT_PROJECT_KEY);
+    bindOpfsProject(local.id, local.name);
     await restartWithFiles(files);
     useWorkspaceStore.getState().loadFiles(files);
-    localStorage.removeItem(CURRENT_PROJECT_KEY);
-
-    const projectName = name.trim() || 'imported-project';
     set({
       currentId: null,
-      name: projectName,
-      createdAt: null,
-      updatedAt: null,
+      name: local.name,
+      createdAt: local.createdAt,
+      updatedAt: local.updatedAt,
     });
 
     const fileCount = Object.keys(files).length;
-    runtime.log('success', `Imported “${projectName}” · ${fileCount} files from ZIP`);
-    useUiStore.getState().toast(`Imported “${projectName}”`);
+    runtime.log('success', `Imported “${local.name}” · ${fileCount} files into OPFS`);
+    useUiStore.getState().toast(`Imported “${local.name}”`);
   },
 }));

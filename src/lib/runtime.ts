@@ -25,6 +25,18 @@ export type RuntimeEvent =
 type RuntimeListener = (event: RuntimeEvent) => void;
 type AlmostnodeModule = typeof import('almostnode');
 
+/**
+ * Optional durable mirror for VirtualFS mutations. The runtime never waits for
+ * it, so a slow or unavailable backing store cannot block editing.
+ */
+export interface FileSink {
+  write(path: string, content: string): void;
+  mkdir(path: string): void;
+  delete(path: string): void;
+  rename(from: string, to: string): void;
+  replaceAll(files: Record<string, string>): void | Promise<void>;
+}
+
 const IGNORED = new Set(['node_modules', '.git', '.cache', '.nitro']);
 
 /**
@@ -43,6 +55,12 @@ export class IdeRuntime {
   private bootPromise: Promise<void> | null = null;
   private logSequence = 0;
   private previewUrlValue = '';
+  private fileSink: FileSink | null = null;
+
+  /** Attach the durable project store (OPFS) or detach it with `null`. */
+  setFileSink(sink: FileSink | null): void {
+    this.fileSink = sink;
+  }
 
   subscribe(listener: RuntimeListener): () => void {
     this.listeners.add(listener);
@@ -202,6 +220,7 @@ export class IdeRuntime {
   async replaceProject(files: Record<string, string>): Promise<void> {
     if (!this.lib || this.status !== 'ready') {
       await this.boot(files);
+      void this.fileSink?.replaceAll(files);
       return;
     }
 
@@ -211,6 +230,7 @@ export class IdeRuntime {
     this.startServer();
     this.emit({ type: 'restarted', url: this.previewUrlValue });
     this.log('success', 'Preview server restarted with new files');
+    void this.fileSink?.replaceAll(files);
   }
 
   /** Hand the live iframe window to almostnode so HMR can postMessage into it. */
@@ -245,6 +265,7 @@ export class IdeRuntime {
 
   writeFile(path: string, content: string): void {
     this.requireVfs().writeFileSync(path, content);
+    this.fileSink?.write(path, content);
   }
 
   exists(path: string): boolean {
@@ -273,27 +294,35 @@ export class IdeRuntime {
 
   createFolder(path: string): void {
     this.requireVfs().mkdirSync(path, { recursive: true });
+    this.fileSink?.mkdir(path);
   }
 
   createFile(path: string, content = ''): void {
     const parent = dirname(path);
     if (parent !== '/') this.requireVfs().mkdirSync(parent, { recursive: true });
     this.requireVfs().writeFileSync(path, content);
+    this.fileSink?.write(path, content);
   }
 
   renameEntry(from: string, to: string): void {
     const parent = dirname(to);
     if (parent !== '/') this.requireVfs().mkdirSync(parent, { recursive: true });
     this.requireVfs().renameSync(from, to);
+    this.fileSink?.rename(from, to);
   }
 
   deleteEntry(path: string): void {
     if (path === '/') throw new Error('Refusing to delete the project root');
+    this.deleteEntryInternal(path);
+    this.fileSink?.delete(path);
+  }
+
+  private deleteEntryInternal(path: string): void {
     const vfs = this.requireVfs();
     const stats = vfs.statSync(path);
     if (stats.isDirectory()) {
       for (const child of vfs.readdirSync(path)) {
-        this.deleteEntry(joinPath(path, child));
+        this.deleteEntryInternal(joinPath(path, child));
       }
       vfs.rmdirSync(path);
     } else {

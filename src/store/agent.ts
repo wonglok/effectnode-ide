@@ -1,12 +1,30 @@
 import { create } from 'zustand';
-import type { HarnessStatus, HarnessTodoItem } from '../../shared/types';
-import { fetchAgentStatus } from '@/lib/agent-client';
-import { runHarnessTurn } from '@/lib/harness-client';
+import type {
+  AgentChatMessage,
+  AgentStatusResponse,
+  AgentTodoItem,
+  AgentTodoStatus,
+} from '../../shared/types';
+import { fetchAgentStatus, streamAgentChat } from '@/lib/agent-client';
+import {
+  AGENT_TOOLS,
+  buildAgentSystemPrompt,
+  describeToolCall,
+  executeAgentTool,
+} from '@/lib/agent-tools';
 import { playCompletionChime, primeCompletionAudio } from '@/lib/completion-chime';
 import { runtime } from '@/lib/runtime';
-import { useProjectStore } from './projects';
 import { useUiStore } from './ui';
 import { useWorkspaceStore } from './workspace';
+
+const MAX_STEPS = 8;
+const MAX_HISTORY_MESSAGES = 40;
+
+const TODO_STATUSES = new Set<AgentTodoStatus>([
+  'pending',
+  'in_progress',
+  'completed',
+]);
 
 export type AgentRunStatus = 'idle' | 'running';
 
@@ -27,16 +45,15 @@ export type AgentMessage =
   | { id: string; role: 'refresh'; at: number };
 
 export interface AgentState {
-  /** DeepSeek Harness route reported by the Nitro server. */
-  harness: HarnessStatus | null;
+  /** DeepSeek proxy status reported by the Nitro server. */
+  status: AgentStatusResponse | null;
   statusLoaded: boolean;
   setupOpen: boolean;
   runStatus: AgentRunStatus;
   runStatusText: string | null;
   messages: AgentMessage[];
-  /** Latest whole-list snapshot emitted by the harness `todo_write` tool. */
-  todos: HarnessTodoItem[];
-  todosFor: string | null;
+  todos: AgentTodoItem[];
+  history: AgentChatMessage[];
   error: string | null;
   undoSnapshot: Record<string, string> | null;
   undoAvailable: boolean;
@@ -59,74 +76,55 @@ function makeId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 }
 
+function trimHistory(history: AgentChatMessage[]): AgentChatMessage[] {
+  const slice = history.slice(-MAX_HISTORY_MESSAGES);
+  while (slice.length > 0 && slice[0].role === 'tool') slice.shift();
+  return slice;
+}
+
 function finalizeStreaming(messages: AgentMessage[]): AgentMessage[] {
   return messages.map((message) =>
     message.role === 'assistant' && message.streaming ? { ...message, streaming: false } : message
   );
 }
 
-/**
- * Stable per-project conversation identity. The server maps it to one harness
- * session and one mirrored workspace directory.
- */
-function conversationKey(): string {
-  const project = useProjectStore.getState();
-  const identity = project.currentId ?? `scratch:${project.name}`;
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < identity.length; index += 1) {
-    hash ^= identity.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193);
+function parseTodos(rawArguments: string): AgentTodoItem[] | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(rawArguments);
+  } catch {
+    return null;
   }
-  return `forge-${(hash >>> 0).toString(36).padStart(7, '0')}`;
+  const raw = (parsed as { todos?: unknown } | null)?.todos;
+  if (!Array.isArray(raw)) return null;
+
+  const todos: AgentTodoItem[] = [];
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue;
+    const content = (entry as { content?: unknown }).content;
+    const status = (entry as { status?: unknown }).status;
+    if (typeof content !== 'string' || !content.trim()) continue;
+    if (typeof status !== 'string' || !TODO_STATUSES.has(status as AgentTodoStatus)) continue;
+    todos.push({ content: content.trim(), status: status as AgentTodoStatus });
+  }
+  return todos;
 }
 
-/** Apply the harness's mirrored project to the in-page virtual file system. */
-function applyHarnessFiles(files: Record<string, string>, changedPaths: string[]): void {
-  if (changedPaths.length === 0) return;
-
-  const workspace = useWorkspaceStore.getState();
-  const deleted = new Set<string>();
-
-  for (const path of changedPaths) {
-    if (files[path] === undefined) {
-      deleted.add(path);
-      if (runtime.exists(path)) runtime.deleteEntry(path);
-    } else {
-      runtime.createFile(path, files[path]);
-    }
-  }
-
-  const buffers: Record<string, string> = {};
-  for (const [path, content] of Object.entries(workspace.buffers)) {
-    if (deleted.has(path)) continue;
-    buffers[path] = files[path] ?? content;
-  }
-
-  const openFiles = workspace.openFiles.filter((path) => !deleted.has(path));
-  const activeFile =
-    workspace.activeFile && openFiles.includes(workspace.activeFile)
-      ? workspace.activeFile
-      : openFiles[0] ?? null;
-
-  useWorkspaceStore.setState({
-    buffers,
-    openFiles,
-    activeFile,
-    selectedPath: activeFile ?? workspace.selectedPath,
-  });
-  useWorkspaceStore.getState().refresh();
-  runtime.requestPreviewReload();
+function todoSummary(todos: AgentTodoItem[]): string {
+  const count = (status: AgentTodoStatus) =>
+    todos.filter((todo) => todo.status === status).length;
+  return `Updated todo list: ${count('pending')} pending, ${count('in_progress')} in progress, ${count('completed')} completed.`;
 }
 
 export const useAgentStore = create<AgentState>((set, get) => ({
-  harness: null,
+  status: null,
   statusLoaded: false,
   setupOpen: false,
   runStatus: 'idle',
   runStatusText: null,
   messages: [],
   todos: [],
-  todosFor: null,
+  history: [],
   error: null,
   undoSnapshot: null,
   undoAvailable: false,
@@ -135,15 +133,12 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     initPromise ??= (async () => {
       try {
         const status = await fetchAgentStatus();
-        set({
-          harness: status.harness,
-          statusLoaded: true,
-        });
+        set({ status, statusLoaded: true });
       } catch (error) {
         set({ statusLoaded: true });
         runtime.log(
           'warn',
-          `Harness status unavailable: ${error instanceof Error ? error.message : String(error)}`
+          `Agent status unavailable: ${error instanceof Error ? error.message : String(error)}`
         );
       }
     })();
@@ -158,7 +153,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     const state = get();
     if (!text || state.runStatus === 'running') return;
 
-    if (!state.harness?.configured) {
+    if (!state.status?.configured) {
       set({ setupOpen: true });
       return;
     }
@@ -167,35 +162,26 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     // completion chime is allowed when the model finishes some time later.
     primeCompletionAudio();
 
-    useWorkspaceStore.getState().flush();
     const snapshot = runtime.snapshot();
     const controller = new AbortController();
     const runId = ++runSequence;
     activeRun = { id: runId, controller };
 
-    const key = conversationKey();
-    const switchedConversation = state.todosFor !== key;
+    const userMessage: AgentChatMessage = { role: 'user', content: text };
+    const baseHistory = [...state.history, userMessage];
+    let history = baseHistory;
+    let changed = false;
 
-    const assistantDisplayId = makeId('assistant');
     set({
       runStatus: 'running',
-      runStatusText: 'Syncing project…',
+      runStatusText: 'Thinking…',
       error: null,
-      ...(switchedConversation ? { todos: [] as HarnessTodoItem[], todosFor: key } : {}),
+      history,
       messages: [
         ...state.messages,
         { id: makeId('user'), role: 'user', content: text, at: Date.now() },
-        {
-          id: assistantDisplayId,
-          role: 'assistant',
-          content: '',
-          streaming: true,
-          at: Date.now(),
-        },
       ],
     });
-
-    const toolMessages = new Map<string, string>();
 
     const addNotice = (content: string) => {
       set((current) => ({
@@ -206,126 +192,183 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       }));
     };
 
-    const addTool = (event: { id: string; name: string; summary: string; path?: string }) => {
-      // The plan is rendered in its own panel, not as a tool card.
-      if (event.name === 'todo_write') return;
-      const displayId = makeId('tool');
-      toolMessages.set(event.id, displayId);
-      set((current) => ({
-        messages: [
-          ...current.messages,
-          {
-            id: displayId,
-            role: 'tool',
-            at: Date.now(),
-            tool: {
-              name: event.name,
-              summary: event.summary,
-              path: event.path,
-              status: 'running',
-            },
-          },
-        ],
-      }));
-    };
-
-    const finishTool = (event: {
-      id: string;
-      name: string;
-      status: 'ok' | 'error';
-      detail?: string;
-      path?: string;
-    }) => {
-      const displayId = toolMessages.get(event.id);
-      if (!displayId) return;
-      set((current) => ({
-        messages: current.messages.map((message) =>
-          message.role === 'tool' && message.id === displayId
-            ? {
-                ...message,
-                tool: {
-                  ...message.tool,
-                  status: event.status,
-                  detail: event.detail ?? message.tool.detail,
-                  path: event.path ?? message.tool.path,
-                },
-              }
-            : message
-        ),
-      }));
-    };
-
     try {
-      const result = await runHarnessTurn({
-        prompt: text,
-        conversationKey: key,
-        files: snapshot,
-        signal: controller.signal,
-        onEvent: (event) => {
-          if (runId !== runSequence) return;
-          if (event.type === 'status') {
-            set({ runStatusText: event.message });
-          } else if (event.type === 'tool') {
-            set({ runStatusText: event.summary });
-            addTool(event);
-          } else if (event.type === 'tool-done') {
-            finishTool(event);
-          } else if (event.type === 'todo') {
-            set({ todos: event.todos, runStatusText: 'Updating the task plan…' });
+      for (let step = 0; step < MAX_STEPS; step += 1) {
+        if (controller.signal.aborted || runId !== runSequence) break;
+        set({ runStatusText: `Thinking · step ${step + 1}` });
+
+        const assistantDisplayId = makeId('assistant');
+        set((current) => ({
+          messages: [
+            ...current.messages,
+            {
+              id: assistantDisplayId,
+              role: 'assistant',
+              content: '',
+              streaming: true,
+              at: Date.now(),
+            },
+          ],
+        }));
+
+        const result = await streamAgentChat({
+          messages: [
+            { role: 'system', content: buildAgentSystemPrompt() },
+            ...trimHistory(history),
+          ],
+          tools: AGENT_TOOLS,
+          signal: controller.signal,
+          onDelta: (chunk) => {
+            if (runId !== runSequence) return;
+            set((current) => ({
+              messages: current.messages.map((message) =>
+                message.role === 'assistant' && message.id === assistantDisplayId
+                  ? { ...message, content: message.content + chunk }
+                  : message
+              ),
+            }));
+          },
+        });
+
+        if (runId !== runSequence) return;
+
+        const toolCalls = result.toolCalls;
+        const hasTools = toolCalls.length > 0;
+
+        set((current) => ({
+          messages: current.messages.flatMap((message) => {
+            if (message.role !== 'assistant' || message.id !== assistantDisplayId) return [message];
+            if (!result.content.trim() && hasTools) return [];
+            return [{ ...message, content: result.content, streaming: false }];
+          }),
+        }));
+
+        const assistantMessage: AgentChatMessage = {
+          role: 'assistant',
+          content: result.content || null,
+        };
+        if (hasTools) assistantMessage.tool_calls = toolCalls;
+        history = [...history, assistantMessage];
+        set({ history });
+
+        if (!hasTools) {
+          if (!result.content.trim()) addNotice('The model returned an empty response.');
+          break;
+        }
+
+        for (const call of toolCalls) {
+          if (controller.signal.aborted || runId !== runSequence) break;
+
+          // The plan has its own panel; keep it out of the tool-card stream.
+          if (call.function.name === 'todo_write') {
+            const todos = parseTodos(call.function.arguments);
+            if (todos) {
+              set({ todos, runStatusText: 'Updating the task plan…' });
+              history = [
+                ...history,
+                {
+                  role: 'tool',
+                  tool_call_id: call.id,
+                  content: todoSummary(todos),
+                },
+              ];
+            } else {
+              history = [
+                ...history,
+                {
+                  role: 'tool',
+                  tool_call_id: call.id,
+                  content: 'Error: todos must be an array of { content, status } items.',
+                },
+              ];
+            }
+            set({ history });
+            continue;
           }
-        },
-      });
+
+          const preview = describeToolCall(call);
+          const displayId = makeId('tool');
+          set({ runStatusText: preview.summary });
+
+          set((current) => ({
+            messages: [
+              ...current.messages,
+              {
+                id: displayId,
+                role: 'tool',
+                at: Date.now(),
+                tool: {
+                  name: preview.name,
+                  summary: preview.summary,
+                  path: preview.path,
+                  status: 'running',
+                },
+              },
+            ],
+          }));
+
+          const outcome = await executeAgentTool(preview.name, call.function.arguments);
+          if (runId !== runSequence) return;
+          changed = changed || outcome.changed;
+
+          set((current) => ({
+            messages: current.messages.map((message) =>
+              message.role === 'tool' && message.id === displayId
+                ? {
+                    ...message,
+                    tool: {
+                      name: preview.name,
+                      summary: outcome.summary,
+                      detail: outcome.detail,
+                      path: outcome.path ?? preview.path,
+                      status: outcome.status,
+                    },
+                  }
+                : message
+            ),
+          }));
+
+          history = [
+            ...history,
+            { role: 'tool', tool_call_id: call.id, content: outcome.output },
+          ];
+          set({ history });
+        }
+
+        if (controller.signal.aborted) break;
+        if (step === MAX_STEPS - 1) {
+          addNotice(`Stopped after ${MAX_STEPS} steps. Ask again to continue.`);
+        }
+      }
 
       if (runId !== runSequence) return;
 
-      applyHarnessFiles(result.files, result.changedPaths);
-
-      const changed = result.changedPaths.length > 0;
-      const response =
-        result.finalResponse.trim() ||
-        (changed ? 'Done — the project has been updated.' : 'Done.');
+      if (controller.signal.aborted) {
+        set({
+          runStatus: 'idle',
+          runStatusText: null,
+          history: baseHistory,
+          messages: finalizeStreaming(get().messages),
+          ...(changed ? { undoSnapshot: snapshot, undoAvailable: true } : {}),
+        });
+        addNotice('Stopped.');
+        return;
+      }
 
       set((current) => ({
         runStatus: 'idle',
         runStatusText: null,
         messages: [
-          ...finalizeStreaming(current.messages).map((message) => {
-            if (message.role === 'assistant' && message.id === assistantDisplayId) {
-              return { ...message, content: response, streaming: false };
-            }
-            if (message.role === 'tool' && message.tool.status === 'running') {
-              return { ...message, tool: { ...message.tool, status: 'ok' as const } };
-            }
-            return message;
-          }),
+          ...finalizeStreaming(current.messages),
           { id: makeId('refresh'), role: 'refresh', at: Date.now() },
         ],
         ...(changed ? { undoSnapshot: snapshot, undoAvailable: true } : {}),
       }));
-
-      if (result.skipped.length > 0) {
-        addNotice(
-          `Skipped ${result.skipped.length} non-text or oversized file${
-            result.skipped.length === 1 ? '' : 's'
-          } when mirroring back: ${result.skipped.slice(0, 3).join(', ')}${
-            result.skipped.length > 3 ? '…' : ''
-          }`
-        );
-      }
-
-      if (result.changedPaths.length > 0) {
-        runtime.log(
-          'success',
-          `Harness updated ${result.changedPaths.length} file${result.changedPaths.length === 1 ? '' : 's'}`
-        );
-      }
       playCompletionChime();
     } catch (error) {
       if (runId !== runSequence) return;
 
-      const aborted =
-        controller.signal.aborted ||
-        (error instanceof DOMException && error.name === 'AbortError');
+      const aborted = controller.signal.aborted || (error instanceof DOMException && error.name === 'AbortError');
       const message = aborted
         ? 'Stopped.'
         : error instanceof Error
@@ -335,8 +378,10 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       set({
         runStatus: 'idle',
         runStatusText: null,
+        history: baseHistory,
         error: aborted ? null : message,
         messages: finalizeStreaming(get().messages),
+        ...(changed ? { undoSnapshot: snapshot, undoAvailable: true } : {}),
       });
 
       if (aborted) {
@@ -348,7 +393,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             { id: makeId('error'), role: 'error', content: message, at: Date.now() },
           ],
         }));
-        runtime.log('error', `Harness: ${message}`);
+        runtime.log('error', `Agent: ${message}`);
       }
     } finally {
       if (activeRun?.id === runId) activeRun = null;
@@ -368,7 +413,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       runStatusText: null,
       messages: [],
       todos: [],
-      todosFor: null,
+      history: [],
       error: null,
       undoSnapshot: null,
       undoAvailable: false,
@@ -391,6 +436,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         undoAvailable: false,
         runStatus: 'idle',
         runStatusText: null,
+        history: [],
         messages: [
           ...current.messages,
           {
@@ -412,4 +458,4 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 }));
 
 export const selectAgentConfigured = (state: AgentState): boolean =>
-  Boolean(state.harness?.configured);
+  Boolean(state.status?.configured);

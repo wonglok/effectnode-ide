@@ -1,19 +1,40 @@
 import { defineEventHandler } from 'h3';
+import type { AgentStatusResponse } from '../../../../shared/types';
 import { authGuard } from '../../../utils/auth';
-import { harnessStatus } from '../../../utils/harness';
+
+function credential(): {
+  key: string;
+  keySource: AgentStatusResponse['keySource'];
+} {
+  const candidates: Array<[AgentStatusResponse['keySource'], string | undefined]> = [
+    ['DEEPSEEK_API_KEY', process.env.DEEPSEEK_API_KEY],
+    ['AGENT_API_KEY', process.env.AGENT_API_KEY],
+    ['OPENAI_API_KEY', process.env.OPENAI_API_KEY],
+  ];
+  for (const [keySource, value] of candidates) {
+    const key = (value ?? '').trim();
+    if (key) return { key, keySource };
+  }
+  return { key: '', keySource: null };
+}
 
 export default defineEventHandler(async (event) => {
   const denied = await authGuard(event);
   if (denied) return denied;
 
-  const harness = harnessStatus();
+  const { key, keySource } = credential();
+  const model =
+    process.env.DEEPSEEK_MODEL?.trim() ||
+    process.env.AGENT_MODEL?.trim() ||
+    'deepseek-flash';
 
   return {
-    // The browser agent now runs through the DeepSeek Harness SDK; this flag
-    // tells the UI whether the server can launch it.
-    configured: harness.configured,
-    defaultBaseUrl: process.env.AGENT_BASE_URL || 'https://api.deepseek.com',
-    defaultModel: harness.model,
-    harness,
+    configured: Boolean(key),
+    provider: 'deepseek',
+    model,
+    proxyUrl: '/api/deepseek/chat/completions',
+    keySource,
+    defaultBaseUrl: '/api/deepseek/chat/completions',
+    defaultModel: model,
   };
 });
