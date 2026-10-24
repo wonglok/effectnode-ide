@@ -3,7 +3,8 @@
   --ef-bg: #030403;
   --ef-paper: #f3f0e7;
   --ef-ink: #050605;
-  --ef-lime: #d8ff63;
+  /* Tiffany Blue primary */
+  --ef-primary: #0abab5;
   --ef-serif: 'Instrument Serif', Georgia, 'Times New Roman', serif;
   --ef-sans: 'Space Grotesk', 'Helvetica Neue', Arial, sans-serif;
   --ef-mono: 'JetBrains Mono', 'SFMono-Regular', Consolas, monospace;
@@ -52,12 +53,12 @@ a {
 }
 
 ::selection {
-  background: var(--ef-lime);
+  background: var(--ef-primary);
   color: var(--ef-ink);
 }
 
 :focus-visible {
-  outline: 1px solid var(--ef-lime);
+  outline: 1px solid var(--ef-primary);
   outline-offset: 4px;
 }
 

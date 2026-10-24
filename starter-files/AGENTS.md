@@ -12,6 +12,9 @@ and external coding agents should follow these rules when changing the project.
   add a second router or bypass the store when changing chapters.
 - Preserve the chapter order and IDs in `src/sections/registry.ts`. Scroll
   anchors, HUD labels, transitions, and routes all depend on them.
+- Prefer Tailwind utilities for new UI. The primary color is Tiffany Blue
+  (`#0abab5`), available as `--ef-primary` in CSS and `bg-primary` /
+  `text-primary` in Tailwind.
 
 ## Planning
 
@@ -38,9 +41,13 @@ and external coding agents should follow these rules when changing the project.
 - Imports must include explicit file extensions because the in-browser Vite
   server cannot resolve extensionless imports: `./App.tsx`, `../lib/foo.ts`,
   `./styles.css`.
-- React, React DOM, React Router, Zustand, and three resolve from the import
-  map in `index.html`. Do not add npm dependencies or import packages that are
-  not mapped; the browser preview has no install step.
+- React, React DOM, React Router, Zustand, Tailwind (`@tailwindcss/browser`),
+  and three resolve from the import map in `index.html`. Do not add npm
+  dependencies or import packages that are not mapped; the browser preview has
+  no install step.
+- Tailwind's theme and utilities are created by `src/tailwind-theme.ts` in a
+  `<style type="text/tailwindcss">` block. Preflight is omitted on purpose; do
+  not add it without checking the existing design.
 - Keep `index.html` as the entry point. Do not replace its module script or add
   external scripts.
 - Match the existing visual language and keep changes focused.
@@ -54,6 +61,7 @@ and external coding agents should follow these rules when changing the project.
 - `src/sections/registry.ts` — chapter metadata; order matters.
 - `src/lib/scroll-phases.ts` — anchors, holds, and blend timing.
 - `src/components/Landing.tsx` — fixed chrome and scroll input.
+- `src/tailwind-theme.ts` — Tailwind v4 browser theme and primary token.
 
 ## Verification
 

@@ -1,3 +1,5 @@
+import './tailwind-theme.ts';
+import '@tailwindcss/browser';
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
 import './styles.css';

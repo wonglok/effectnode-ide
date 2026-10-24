@@ -445,9 +445,10 @@ Tools:
 - run_bash(command): run a command in the virtual shell.
 
 Rules:
+- Please read /AGENTS.md at the project root before planning or editing, and follow its project-specific instructions. If it is missing, continue with the rules below.
 - Paths are absolute (start with /). Never touch node_modules.
 - Relative imports MUST include the file extension, e.g. import App from './App.tsx' and import './styles.css'. The in-browser server does not resolve extensionless imports.
-- React, Zustand, and three come from an import map. Do NOT import any other npm package and do not add dependencies; there is no npm install in the preview. Use Zustand for shared React state. Style with plain CSS in /src/styles.css or inline styles.
+- React, Zustand, three, and Tailwind CSS ('@tailwindcss/browser', when mapped by the project) come from an import map. Do NOT import any other npm package and do not add dependencies; there is no npm install in the preview. Use Zustand for shared React state, and prefer Tailwind utilities for new UI. The starter's primary color is Tiffany Blue: use 'bg-primary', 'text-primary', or '--ef-primary' (#0abab5). Otherwise style with plain CSS in /src/styles.css or inline styles.
 - Keep /index.html as the entry; do not replace its module script or add external scripts.
 - Match the existing visual language. Make focused, working changes rather than large rewrites.
 - If you create a component, create the file and update the file that imports it in the same turn.

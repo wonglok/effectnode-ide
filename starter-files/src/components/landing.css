@@ -42,8 +42,8 @@
   display: block;
   width: 100%;
   height: 100%;
-  background: linear-gradient(90deg, #f3f0e7, #d8ff63 55%, #c4adff);
-  box-shadow: 0 0 16px rgba(216, 255, 99, 0.35);
+  background: linear-gradient(90deg, #f3f0e7, var(--ef-primary) 55%, #c4adff);
+  box-shadow: 0 0 16px rgba(10, 186, 181, 0.35);
   transform: scaleX(0);
   transform-origin: 0 50%;
   will-change: transform;
@@ -91,18 +91,18 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #d8ff63;
+  background: var(--ef-primary);
   box-shadow:
-    0 0 0 4px rgba(216, 255, 99, 0.1),
-    0 0 18px rgba(216, 255, 99, 0.55);
+    0 0 0 4px rgba(10, 186, 181, 0.1),
+    0 0 18px rgba(10, 186, 181, 0.55);
   animation: ef-mark 3.4s ease-in-out infinite;
 }
 
 @keyframes ef-mark {
   50% {
     box-shadow:
-      0 0 0 6px rgba(216, 255, 99, 0.04),
-      0 0 24px rgba(216, 255, 99, 0.8);
+      0 0 0 6px rgba(10, 186, 181, 0.04),
+      0 0 24px rgba(10, 186, 181, 0.8);
   }
 }
 
@@ -154,9 +154,9 @@
 }
 
 .ef-sound[data-on='true'] {
-  border-color: rgba(216, 255, 99, 0.42);
-  background: rgba(216, 255, 99, 0.1);
-  color: #d8ff63;
+  border-color: rgba(10, 186, 181, 0.42);
+  background: rgba(10, 186, 181, 0.1);
+  color: var(--ef-primary);
 }
 
 .ef-talk {

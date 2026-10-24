@@ -43,7 +43,7 @@ type ScrollerState = {
   setScroll: (progress: number) => void;
   setBootPhase: (phase: BootPhase) => void;
   setPreloadProgress: (progress: number) => void;
-  goTo: (index: number) => void;
+  goTo: (index: number, options?: { slow?: boolean }) => void;
   /** Snap directly to a chapter, used when the router restores a URL. */
   jumpTo: (index: number) => void;
   previewTransition: (index: number) => void;
@@ -52,6 +52,12 @@ type ScrollerState = {
 };
 
 type ScrollMotion = 'idle' | 'spring' | 'coast' | 'preview';
+
+const SCROLL_STIFFNESS = 30;
+const SCROLL_DAMPING = 11;
+/** Chapter-number navigation uses a softer spring, about twice as slow. */
+const SLOW_SCROLL_STIFFNESS = 6;
+const SLOW_SCROLL_DAMPING = 2 * Math.sqrt(SLOW_SCROLL_STIFFNESS);
 
 type ScrollEngine = {
   scrollPixel: number;
@@ -65,6 +71,8 @@ type ScrollEngine = {
   previewStartPixel: number;
   previewEndPixel: number;
   previewStartTime: number;
+  springStiffness: number;
+  springDamping: number;
 };
 
 const createScrollEngine = (): ScrollEngine => ({
@@ -79,6 +87,8 @@ const createScrollEngine = (): ScrollEngine => ({
   previewStartPixel: 0,
   previewEndPixel: 0,
   previewStartTime: 0,
+  springStiffness: SCROLL_STIFFNESS,
+  springDamping: SCROLL_DAMPING,
 });
 
 /**
@@ -91,8 +101,6 @@ const engine: ScrollEngine =
     : ((window as unknown as { __easyFancyScroll?: ScrollEngine })
         .__easyFancyScroll ??= createScrollEngine());
 
-const SCROLL_STIFFNESS = 30;
-const SCROLL_DAMPING = 11;
 const SCROLL_FRICTION = 4;
 const WHEEL_INERTIA = 4;
 const WHEEL_GAIN = 0.35;
@@ -177,11 +185,11 @@ function scrollLoop(now: number) {
 
   if (engine.scrollMotion !== 'spring') return;
 
+  const stiffness = engine.springStiffness ?? SCROLL_STIFFNESS;
+  const damping = engine.springDamping ?? SCROLL_DAMPING;
   const displacement = engine.scrollTargetPixel - engine.scrollPixel;
   engine.scrollVelocity +=
-    (displacement * SCROLL_STIFFNESS -
-      engine.scrollVelocity * SCROLL_DAMPING) *
-    dt;
+    (displacement * stiffness - engine.scrollVelocity * damping) * dt;
   integrateVelocity(dt);
 
   const restDistance = 0.0004 * engine.pixelsPerSection;
@@ -206,12 +214,19 @@ function startScrollLoop() {
   engine.scrollFrame = window.requestAnimationFrame(scrollLoop);
 }
 
-export function scrollVirtualTo(progress: number) {
+export function scrollVirtualTo(
+  progress: number,
+  options: { slow?: boolean } = {}
+) {
   if (typeof window === 'undefined') return;
   if (engine.pixelsPerSection <= 1) {
     engine.pixelsPerSection = measureSectionPixels();
   }
 
+  engine.springStiffness = options.slow
+    ? SLOW_SCROLL_STIFFNESS
+    : SCROLL_STIFFNESS;
+  engine.springDamping = options.slow ? SLOW_SCROLL_DAMPING : SCROLL_DAMPING;
   engine.scrollTargetPixel = clampProgress(progress) * engine.pixelsPerSection;
   engine.scrollVelocity = 0;
   engine.scrollMotion = 'spring';
@@ -295,9 +310,12 @@ function createScrollerStore() {
     setPreloadProgress: (preloadProgress) =>
       set({ preloadProgress: clamp01(preloadProgress) }),
 
-    goTo: (index) => {
+    goTo: (index, options) => {
       audioEngine.playUiClick();
-      scrollVirtualTo(getChapterAnchor(Math.max(0, Math.min(SECTION_COUNT - 1, index))));
+      scrollVirtualTo(
+        getChapterAnchor(Math.max(0, Math.min(SECTION_COUNT - 1, index))),
+        options
+      );
     },
 
     jumpTo: (index) => {

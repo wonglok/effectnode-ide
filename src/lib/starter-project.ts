@@ -16,6 +16,8 @@ import indexHtml from '../../starter-files/index.html?raw';
 import readme from '../../starter-files/README.md?raw';
 import agentsMd from '../../starter-files/AGENTS.md?raw';
 import mainTsx from '../../starter-files/src/main.tsx?raw';
+import tailwindThemeTs from '../../starter-files/src/tailwind-theme.ts?raw';
+import typesDts from '../../starter-files/src/types.d.ts?raw';
 import appTsx from '../../starter-files/src/App.tsx?raw';
 import stylesCss from '../../starter-files/src/styles.css?raw';
 import registryTs from '../../starter-files/src/sections/registry.ts?raw';
@@ -42,6 +44,8 @@ export const STARTER_FILES: Record<string, string> = {
   '/README.md': readme,
   '/AGENTS.md': agentsMd,
   '/src/main.tsx': mainTsx,
+  '/src/tailwind-theme.ts': tailwindThemeTs,
+  '/src/types.d.ts': typesDts,
   '/src/App.tsx': appTsx,
   '/src/styles.css': stylesCss,
   '/src/sections/registry.ts': registryTs,

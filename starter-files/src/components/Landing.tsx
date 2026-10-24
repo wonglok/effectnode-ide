@@ -119,7 +119,7 @@ function SceneHud() {
             className="ef-hud-button"
             data-active={active}
             style={{ "--accent": section.accent } as CSSProperties}
-            onClick={() => goTo(section.index)}
+            onClick={() => goTo(section.index, { slow: true })}
             aria-label={`Go to scene ${section.index + 1}, ${section.name}`}
             aria-current={active ? "true" : undefined}
             title={section.name}

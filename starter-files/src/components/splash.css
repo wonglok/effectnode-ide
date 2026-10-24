@@ -41,10 +41,10 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #d8ff63;
+  background: var(--ef-primary);
   box-shadow:
-    0 0 0 4px rgba(216, 255, 99, 0.1),
-    0 0 18px rgba(216, 255, 99, 0.55);
+    0 0 0 4px rgba(10, 186, 181, 0.1),
+    0 0 18px rgba(10, 186, 181, 0.55);
 }
 
 .ef-splash-status {
@@ -75,8 +75,8 @@
   display: block;
   width: 100%;
   height: 100%;
-  background: linear-gradient(90deg, #f3f0e7, #d8ff63 60%, #c4adff);
-  box-shadow: 0 0 16px rgba(216, 255, 99, 0.35);
+  background: linear-gradient(90deg, #f3f0e7, var(--ef-primary) 60%, #c4adff);
+  box-shadow: 0 0 16px rgba(10, 186, 181, 0.35);
   transform: scaleX(0);
   transform-origin: 0 50%;
   transition: transform 0.35s ease;
