@@ -2,19 +2,19 @@ import type { AgentToolCall, AgentToolDefinition } from "../../shared/types";
 import { useUiStore } from "@/store/ui";
 import { useWorkspaceStore } from "@/store/workspace";
 import { buildFileTree, flattenLeaves } from "./file-tree";
-import { basename, joinPath, normalizePath } from "./paths";
+import { joinPath, normalizePath } from "./paths";
 import { runtime } from "./runtime";
 import { runShellCommand } from "./shell";
 
 const MAX_READ_CHARS = 40_000;
 const MAX_WRITE_CHARS = 60_000;
 const MAX_BASH_CHARS = 6_000;
-const DEFAULT_GREP_RESULTS = 100;
-const MAX_GREP_RESULTS = 200;
-const MAX_GREP_OUTPUT_CHARS = 20_000;
-const MAX_GREP_LINE_CHARS = 300;
-const MAX_GREP_PATTERN_CHARS = 200;
-const MAX_GREP_FILE_CHARS = 500_000;
+const DEFAULT_SEARCH_RESULTS = 100;
+const MAX_SEARCH_RESULTS = 200;
+const MAX_SEARCH_OUTPUT_CHARS = 20_000;
+const MAX_SEARCH_LINE_CHARS = 300;
+const MAX_SEARCH_QUERY_CHARS = 200;
+const MAX_SEARCH_FILE_CHARS = 500_000;
 const READ_ONLY_COMMANDS = new Set([
   "ls",
   "cat",
@@ -217,118 +217,56 @@ function listFilesTool(args: Record<string, unknown>): AgentToolOutcome {
   };
 }
 
-/** `*` matches within a path segment; `**` crosses directories. */
-function globToRegExp(glob: string): RegExp {
-  const escaped = glob.replace(/[.+^${}()|[\]\\]/g, "\\$&");
-  const source = escaped
-    .replace(/\*\*\//g, "\u0000")
-    .replace(/\*\*/g, "\u0001")
-    .replace(/\*/g, "[^/]*")
-    .replace(/\?/g, "[^/]")
-    .replace(/\u0000/g, "(?:.*/)?")
-    .replace(/\u0001/g, ".*");
-  return new RegExp(`^${source}$`, "i");
-}
-
-function grepTool(args: Record<string, unknown>): AgentToolOutcome {
-  const rawPattern = typeof args.pattern === "string" ? args.pattern : "";
-  if (!rawPattern.trim()) {
-    return fail("Grep failed", "pattern must be a non-empty string");
+function searchTool(args: Record<string, unknown>): AgentToolOutcome {
+  const rawQuery = typeof args.query === "string" ? args.query.trim() : "";
+  if (!rawQuery) {
+    return fail("Search failed", "query must be a non-empty string");
   }
-  if (rawPattern.length > MAX_GREP_PATTERN_CHARS) {
+  if (rawQuery.length > MAX_SEARCH_QUERY_CHARS) {
     return fail(
-      "Grep failed",
-      `pattern is too long (max ${MAX_GREP_PATTERN_CHARS} characters)`,
+      "Search failed",
+      `query is too long (max ${MAX_SEARCH_QUERY_CHARS} characters)`,
     );
   }
 
-  const resolved = resolvePathArg(args.path ?? "/", true);
-  if ("error" in resolved) return fail("Grep failed", resolved.error);
-  const { path } = resolved;
-
-  if (!runtime.exists(path)) {
-    return fail(`Grep ${path}`, `Path not found: ${path}`);
-  }
-
-  const caseSensitive = args.case_sensitive === true;
-  let matcher: RegExp;
-  try {
-    matcher = new RegExp(rawPattern, caseSensitive ? "" : "i");
-  } catch (error) {
-    return fail(
-      "Grep failed",
-      `Invalid regular expression: ${
-        error instanceof Error ? error.message : String(error)
-      }`,
-    );
-  }
-
-  let include: { matcher: RegExp; basenameOnly: boolean } | null = null;
-  if (
-    typeof args.include === "string" &&
-    args.include.trim() &&
-    args.include.trim() !== "*"
-  ) {
-    if (args.include.length > 200) {
-      return fail("Grep failed", "include glob is too long");
-    }
-    const glob = args.include.trim().replace(/^\/+/, "");
-    include = {
-      matcher: globToRegExp(glob),
-      basenameOnly: !glob.includes("/"),
-    };
-  }
-
+  const needle = rawQuery.toLowerCase();
   const requested = args.max_results;
   const maxResults =
     typeof requested === "number" && Number.isFinite(requested)
-      ? Math.max(1, Math.min(MAX_GREP_RESULTS, Math.floor(requested)))
-      : DEFAULT_GREP_RESULTS;
+      ? Math.max(1, Math.min(MAX_SEARCH_RESULTS, Math.floor(requested)))
+      : DEFAULT_SEARCH_RESULTS;
 
-  let files: Array<[string, string]>;
-  if (runtime.isDirectory(path)) {
-    const prefix = path === "/" ? "/" : `${path}/`;
-    files = Object.entries(runtime.snapshot())
-      .filter(([file]) => file === path || file.startsWith(prefix))
-      .sort(([a], [b]) => a.localeCompare(b));
-  } else {
-    const content = runtime.readFile(path);
-    if (content === null) return fail(`Grep ${path}`, `File not found: ${path}`);
-    files = [[path, content]];
-  }
-
+  const files = Object.entries(runtime.snapshot()).sort(([a], [b]) =>
+    a.localeCompare(b),
+  );
   const matches: string[] = [];
   const matchedFiles = new Set<string>();
   let outputChars = 0;
   let truncated = false;
   let skippedLarge = 0;
+  let searchedFiles = 0;
 
   scan: for (const [file, content] of files) {
-    if (content.length > MAX_GREP_FILE_CHARS) {
+    if (content.length > MAX_SEARCH_FILE_CHARS) {
       skippedLarge += 1;
       continue;
     }
 
-    if (include) {
-      const relative = file.replace(/^\/+/, "");
-      const target = include.basenameOnly ? basename(file) : relative;
-      if (!include.matcher.test(target)) continue;
-    }
-
+    searchedFiles += 1;
     const lines = content.split("\n");
     for (let index = 0; index < lines.length; index += 1) {
       const line = lines[index];
-      if (!matcher.test(line)) continue;
+      if (!line.toLowerCase().includes(needle)) continue;
 
       const preview =
-        line.length > MAX_GREP_LINE_CHARS
-          ? `${line.slice(0, MAX_GREP_LINE_CHARS)}…`
+        line.length > MAX_SEARCH_LINE_CHARS
+          ? `${line.slice(0, MAX_SEARCH_LINE_CHARS)}…`
           : line;
       const entry = `${file}:${index + 1}: ${preview.trimEnd()}`;
 
       if (
         matches.length >= maxResults ||
-        outputChars + entry.length + 1 > MAX_GREP_OUTPUT_CHARS
+        outputChars + entry.length + 1 > MAX_SEARCH_OUTPUT_CHARS
       ) {
         truncated = true;
         break scan;
@@ -341,20 +279,20 @@ function grepTool(args: Record<string, unknown>): AgentToolOutcome {
   }
 
   const label =
-    rawPattern.length > 50 ? `${rawPattern.slice(0, 50)}…` : rawPattern;
-  const where = path === "/" ? "" : ` in ${path}`;
+    rawQuery.length > 50 ? `${rawQuery.slice(0, 50)}…` : rawQuery;
 
   if (matches.length === 0) {
     const skipped = skippedLarge
       ? ` (${skippedLarge} file${skippedLarge === 1 ? "" : "s"} skipped as too large)`
       : "";
     return {
-      output: `No matches for /${rawPattern}/${where || " in the project"}${skipped}.`,
-      summary: `No matches for “${label}”${where}`,
-      detail: path,
+      output: `No matches for “${rawQuery}” across ${searchedFiles} file${
+        searchedFiles === 1 ? "" : "s"
+      }${skipped}.`,
+      summary: `No matches for “${label}”`,
+      detail: `${searchedFiles} file${searchedFiles === 1 ? "" : "s"} searched`,
       status: "ok",
       changed: false,
-      path,
     };
   }
 
@@ -365,19 +303,18 @@ function grepTool(args: Record<string, unknown>): AgentToolOutcome {
     skippedLarge
       ? `\n… [skipped ${skippedLarge} file${
           skippedLarge === 1 ? "" : "s"
-        } larger than ${MAX_GREP_FILE_CHARS.toLocaleString()} chars]`
+        } larger than ${MAX_SEARCH_FILE_CHARS.toLocaleString()} chars]`
       : "",
   ].join("");
 
   return {
     output: matches.join("\n") + notes,
-    summary: `Grep “${label}”${where}`,
+    summary: `Search “${label}”`,
     detail: `${matches.length}${truncated ? "+" : ""} matching line${
       matches.length === 1 && !truncated ? "" : "s"
     } · ${matchedFiles.size} file${matchedFiles.size === 1 ? "" : "s"}`,
     status: "ok",
     changed: false,
-    path,
   };
 }
 
@@ -501,39 +438,25 @@ export const AGENT_TOOLS: AgentToolDefinition[] = [
   {
     type: "function",
     function: {
-      name: "grep",
+      name: "search",
       description:
-        "Search project file contents with a JavaScript regular expression. Returns matching lines as path:line:text. Use this to find symbols, imports, or usages before reading files.",
+        "Search every project file for a case-insensitive keyword or phrase. Returns matching lines as path:line:text. Use this to find symbols, imports, or usages before reading files.",
       parameters: {
         type: "object",
         properties: {
-          pattern: {
+          query: {
             type: "string",
             description:
-              "JavaScript regular expression, e.g. \"useState|useEffect\"",
-          },
-          path: {
-            type: "string",
-            description:
-              "Absolute file or directory to search, e.g. /src (default /)",
-          },
-          include: {
-            type: "string",
-            description:
-              "Optional glob filter, e.g. *.tsx or src/**/*.ts",
-          },
-          case_sensitive: {
-            type: "boolean",
-            description: "Match case exactly (default false).",
+              "Case-insensitive keyword or phrase to find, e.g. \"useState\" or \"MY COMPANY\".",
           },
           max_results: {
             type: "integer",
             minimum: 1,
-            maximum: MAX_GREP_RESULTS,
-            description: `Maximum matching lines to return (default ${DEFAULT_GREP_RESULTS}, max ${MAX_GREP_RESULTS}).`,
+            maximum: MAX_SEARCH_RESULTS,
+            description: `Maximum matching lines to return (default ${DEFAULT_SEARCH_RESULTS}, max ${MAX_SEARCH_RESULTS}).`,
           },
         },
-        required: ["pattern"],
+        required: ["query"],
       },
     },
   },
@@ -612,8 +535,8 @@ export async function executeAgentTool(
       return replaceInFileTool(args);
     case "list_files":
       return listFilesTool(args);
-    case "grep":
-      return grepTool(args);
+    case "search":
+      return searchTool(args);
     case "run_bash":
       return runBashTool(args);
     case "todo_write":
@@ -652,16 +575,10 @@ export function describeToolCall(call: AgentToolCall): ToolCallPreview {
       return { name, summary: `Edit ${path ?? "file"}`, path };
     case "list_files":
       return { name, summary: `List ${path ?? "/"}`, path };
-    case "grep": {
-      const pattern =
-        typeof args.pattern === "string" ? args.pattern : "pattern";
-      const label =
-        pattern.length > 40 ? `${pattern.slice(0, 40)}…` : pattern;
-      return {
-        name,
-        summary: `Grep “${label}”${path && path !== "/" ? ` in ${path}` : ""}`,
-        path,
-      };
+    case "search": {
+      const query = typeof args.query === "string" ? args.query : "keyword";
+      const label = query.length > 40 ? `${query.slice(0, 40)}…` : query;
+      return { name, summary: `Search “${label}”` };
     }
     case "run_bash":
       return {
@@ -700,7 +617,7 @@ Tools:
 - write_file(path, content): create or overwrite a file; parent folders are created.
 - replace_in_file(path, old_text, new_text): replace the first exact occurrence. Prefer this for small edits.
 - list_files(path): list a directory.
-- grep(pattern, path?, include?, case_sensitive?, max_results?): search file contents with a JavaScript regex; returns path:line:text matches. Use this to locate symbols or usages across files.
+- search(query, max_results?): search every project file for a case-insensitive keyword or phrase; returns path:line:text matches. Use this to locate symbols or usages across files.
 - run_bash(command): run a command in the virtual shell.
 - todo_write(todos): replace the visible task plan. The UI renders this list live.
 
@@ -714,7 +631,7 @@ Rules:
 - Keep /index.html as the entry; do not replace its module script or add external scripts.
 - Match the existing visual language. Make focused, working changes rather than large rewrites.
 - If you create a component, create the file and update the file that imports it in the same turn.
-- Use grep to find symbols or usages across files, then read only the relevant files. Do not guess file contents.
+- Use search to find keywords across files, then read only the relevant files. Do not guess file contents.
 - Finish with 1–3 short sentences describing what changed. No headings, no bullet lists unless necessary — the required planning Gantt chart is the exception.
 
 # react js

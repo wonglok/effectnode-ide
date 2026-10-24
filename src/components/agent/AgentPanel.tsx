@@ -112,7 +112,7 @@ function toolVisual(name: string): {
   if (name === "bash" || name === "pwsh" || name === "run_bash") {
     return { icon: <SquareTerminal size={13} />, kind: "shell", label: "bash" };
   }
-  if (name === "grep" || name === "glob" || name === "list_files") {
+  if (name === "search" || name === "glob" || name === "list_files") {
     return { icon: <Search size={13} />, kind: "search", label: name };
   }
   if (name === "todo_write") {

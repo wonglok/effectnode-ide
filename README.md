@@ -165,8 +165,8 @@ choice persists in `localStorage`.
 > to the server, so the frontend uses the official Anthropic client instead.
 
 The shared tool set is `read_file`, `write_file`, `replace_in_file`,
-`list_files`, `grep` (JavaScript-regex content search), `run_bash`, and
-`todo_write`.
+`list_files`, `search` (case-insensitive keyword search across all files),
+`run_bash`, and `todo_write`.
 
 Each turn:
 
