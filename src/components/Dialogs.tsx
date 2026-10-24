@@ -19,7 +19,6 @@ export function Modal({
   children,
   footer,
   width = 460,
-  bodyClassName,
 }: {
   title: string;
   subtitle?: string;
@@ -27,7 +26,6 @@ export function Modal({
   children: ReactNode;
   footer?: ReactNode;
   width?: number;
-  bodyClassName?: string;
 }) {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -54,9 +52,7 @@ export function Modal({
             <X size={15} />
           </button>
         </div>
-        <div className={`modal-body${bodyClassName ? ` ${bodyClassName}` : ''}`}>
-          {children}
-        </div>
+        <div className="modal-body">{children}</div>
         {footer ? <div className="modal-footer">{footer}</div> : null}
       </div>
     </div>,

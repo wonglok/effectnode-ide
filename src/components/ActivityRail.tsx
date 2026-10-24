@@ -1,11 +1,8 @@
-import { CircleHelp, CloudUpload, Files, FolderKanban } from "lucide-react";
-import { useDeployStore } from "@/store/deploy";
+import { CircleHelp, Files, FolderKanban } from "lucide-react";
 import { useRuntimeStore } from "@/store/runtime";
 import { useUiStore } from "@/store/ui";
 
 export function ActivityRail() {
-  const deployOpen = useDeployStore((state) => state.deployOpen);
-  const setDeployOpen = useDeployStore((state) => state.setDeployOpen);
   const explorerOpen = useUiStore((state) => state.explorerOpen);
   const projectsOpen = useUiStore((state) => state.projectsOpen);
   const toggleExplorer = useUiStore((state) => state.toggleExplorer);
@@ -29,13 +26,6 @@ export function ActivityRail() {
           title="Projects (⌘K)"
         >
           <FolderKanban size={18} />
-        </button>
-        <button
-          className={`rail-button ${deployOpen ? "is-active" : ""}`}
-          onClick={() => setDeployOpen(true)}
-          title="Deploy"
-        >
-          <CloudUpload size={18} />
         </button>
         {/* <button
           className={`rail-button ${terminalOpen && terminalTab === "console" ? "is-active" : ""}`}
