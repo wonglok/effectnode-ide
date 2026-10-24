@@ -1,12 +1,4 @@
-import type {
-  AuthStatusResponse,
-  DeleteResponse,
-  HealthResponse,
-  ProjectListResponse,
-  ProjectMeta,
-  ProjectSnapshot,
-  SaveProjectPayload,
-} from '../../shared/types';
+import type { AuthStatusResponse } from '../../shared/types';
 import {
   authHeaders,
   handleUnauthorized,
@@ -52,24 +44,4 @@ export const authApi = {
     if (status.token) writeAuthToken(status.token);
     return status;
   },
-};
-
-export const projectApi = {
-  health: () => request<HealthResponse>('/health'),
-
-  list: async (): Promise<ProjectMeta[]> => {
-    const data = await request<ProjectListResponse>('/projects');
-    return data.projects;
-  },
-
-  get: (id: string) => request<ProjectSnapshot>(`/projects/${encodeURIComponent(id)}`),
-
-  save: (payload: SaveProjectPayload) =>
-    request<ProjectMeta>('/projects', {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    }),
-
-  remove: (id: string) =>
-    request<DeleteResponse>(`/projects/${encodeURIComponent(id)}`, { method: 'DELETE' }),
 };

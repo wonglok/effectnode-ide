@@ -3,8 +3,9 @@
 Forge is an IDE that runs its entire development environment in the browser.
 The editor, file explorer, terminal, and live preview share an in-memory file
 system provided by [almostnode]; a Vite-compatible dev server is mounted inside
-the page and served through a service worker. A Nitro backend persists project
-snapshots to disk.
+the page and served through a service worker. A Nitro backend handles
+authentication and proxies the model APIs; project files stay in the browser's
+Origin Private File System.
 
 Built with **Vite 7 · Nitro 3 · TypeScript · React 19 · Zustand 5 · Tailwind CSS 4 · almostnode 0.2.14**.
 
@@ -19,11 +20,10 @@ Built with **Vite 7 · Nitro 3 · TypeScript · React 19 · Zustand 5 · Tailwin
 │        │                        /__virtual__/3000/                   │
 │        └── HMR via postMessage ──┘                                   │
 │                                                                      │
-│  Nitro API ◀── /api/projects ─── snapshot (path → text)              │
-│       └── data/projects/*.json                                       │
+│  Nitro API ◀── /api/auth + model proxies (JWT)                       │
 │                                                                      │
 │  Agent chat ── tools ──▶ VirtualFS ──▶ OPFS sandbox/<ide>/projects  │
-│       └── /api/deepseek/chat/completions (JWT) ──▶ DeepSeek API     │
+│       └── /api/anthropic · /api/deepseek (JWT) ──▶ DeepSeek API     │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -49,8 +49,8 @@ npm run build      # typecheck + client build + Nitro server bundle
 npm start          # serves .output on http://localhost:3000
 ```
 
-Set `PORT` to change the production port. Saved projects live in
-`data/projects/` by default; override with `FORGE_DATA_DIR`.
+Set `PORT` to change the production port. Project files are stored in each
+browser's OPFS; the server does not store project snapshots.
 
 ### UI password
 
@@ -71,15 +71,10 @@ Nitro 3's dev worker crashes on 401 POST responses; production keeps **401**.
 
 ### Deploying to Vercel
 
-Nitro runs as one Vercel Function. Set `FORGE_PASSWORD` in the project's
-environment variables; `.env` files are not deployed.
-
-Project snapshots need durable storage because a serverless filesystem is
-read-only and ephemeral. Connect a **Vercel Blob** store to the project; Vercel
-injects `BLOB_READ_WRITE_TOKEN` and the API stores each project at
-`projects/<id>.json` in the store. Without a token, `/api/projects` returns an
-actionable error instead of writing to a read-only disk. (You can also set
-`FORGE_DATA_DIR` to a writable mounted volume, but `/tmp` is not persistent.)
+Nitro runs as one Vercel Function. Set `FORGE_PASSWORD` and the model
+credentials in the project's environment variables; `.env` files are not
+deployed. Project code stays in the browser, so the function needs no durable
+project storage.
 
 Handlers live in `server/routes/api` rather than a root `api/` directory, which
 Vercel reserves. Build with the Nitro Vercel preset (Nitro detects Vercel
@@ -95,10 +90,10 @@ automatically during `npm run build`).
 - **Manage files** with the explorer: create, rename, delete, drag-free context
   menus, and a fuzzy name filter.
 - **Run shell commands** against the same VFS: `ls`, `cd`, `cat`, `tree`,
-  `echo "…" > file`, `mkdir`, `touch`, `rm -r`, `mv`, `cp`, `open`, `save`.
-- **Save and restore projects** through the Nitro API. Snapshots are JSON files
-  under `data/projects/` (or Vercel Blob in production), and the last opened
-  project is restored on refresh.
+  `echo "…" > file`, `mkdir`, `touch`, `rm -r`, `mv`, `cp`, `open`.
+- **Keep your work automatically.** Every file change is mirrored into OPFS and
+  the last active project is restored on refresh. Rename the project from the
+  title bar; renaming only changes the local project.
 - **Resize** the editor/preview and editor/terminal splits; layout preferences
   persist in `localStorage`.
 - **Open the preview in a new tab** and reload it without restarting the runtime.
@@ -107,14 +102,14 @@ automatically during `npm run build`).
   alongside a `forge.manifest.json` describing the archive format and version.
 - **Import a project** with **Import ZIP** next to Download. Forge reads and
   validates the manifest first, rejects newer archive versions, then starts a
-  new unsaved project from the archive's files. Archives exported before the
+  new local project from the archive's files. Archives exported before the
   manifest existed are rejected with an explanation.
 - **Ask the agent to change the project.** The Agent workbench reads, writes and
   replaces files in the same VFS, runs shell commands, and streams its answer
   into the chat while the preview hot-reloads (see below).
 
-Keyboard shortcuts: `⌘S` save project · `⌘B` explorer · `⌘J` panel ·
-`⌘K` projects · `⌘⇧A` focus agent chat · `Esc` close dialog · `↑/↓` shell history.
+Keyboard shortcuts: `⌘B` explorer · `⌘J` panel · `⌘⇧A` focus agent chat ·
+`Esc` close dialog · `↑/↓` shell history.
 
 ## Agent workbench
 
@@ -207,22 +202,20 @@ sandbox/<ide-sandbox-id>/projects/<project-id>/.forge/project.json
 
 - `<ide-sandbox-id>` is generated once per browser profile and stored in
   `localStorage` as `forge.sandboxId`.
-- Saved projects use their server id; unsaved projects get a stable `local-…`
-  id stored as `forge.localProject`.
-- Boot hydrates OPFS first, so reloads restore unsaved work without waiting for
-  a project fetch. If OPFS has no files, the Nitro snapshot is fetched and used
-  to seed OPFS; otherwise the starter project is created and seeded.
+- Each project gets a stable id; new projects use a `local-…` id stored as
+  `forge.localProject`. The last active id is kept in `forge.currentProject`, so
+  a reload restores the project you were working on.
+- Boot hydrates OPFS first, so reloads restore work without a network request.
+  If there is no project on disk, the starter template is created and seeded.
 - Every `VirtualFS` write/create/rename/delete is mirrored through
-  `IdeRuntime.setFileSink()`. On project switch, open, new, import, or undo, the
-  whole folder is rewritten.
-- The Nitro snapshot (`Save`) remains as a server-side backup and shareable
-  project record; OPFS is the live local store.
+  `IdeRuntime.setFileSink()`. On new, import, or undo, the whole folder is
+  rewritten.
 - The agent transcript lives at `projects/<project-id>/agent-state.json` and is
   excluded from the virtual file system, so it never appears in the explorer,
   the preview, or the agent's tools. It stores the messages, model history,
   task plan, queue, engine choice, and undo snapshot, is debounced while the
-  agent runs, and is restored on reload or project open. New projects start
-  empty; switching projects loads that project's transcript.
+  agent runs, and is restored on reload or when importing a project. New
+  projects start with an empty transcript.
 - Browsers without OPFS fall back to the previous in-memory behaviour; the sink
   no-ops and the app still runs.
 
@@ -267,8 +260,8 @@ The implementation follows the pattern used by almostnode's agent workbench demo
 4. **Point an iframe at it.** The preview iframe navigates to
    `/__virtual__/3000/`. `server.setHMRTarget(iframe.contentWindow)` lets the
    dev server post HMR updates into the sandboxed document.
-5. **Persist.** Nitro stores `{ path: content }` snapshots; loading one restarts
-   the Vite dev server against a fresh `VirtualFS`.
+5. **Persist.** Every mutation is mirrored into OPFS; boot restarts the Vite dev
+   server against a fresh `VirtualFS` loaded from those stored files.
 
 The runtime lives outside React (`src/lib/runtime.ts`) and publishes events.
 Zustand stores (`src/store/`) turn those events into UI state and own the file
@@ -286,27 +279,25 @@ tree, tabs, buffers, logs, project metadata, and layout.
 │   ├── lib/
 │   │   ├── runtime.ts      # VirtualFS + ViteDevServer + service worker
 │   │   ├── starter-project.ts
-│   │   ├── bootstrap.ts    # OPFS → Nitro → starter hydration; binds the sink
+│   │   ├── bootstrap.ts    # OPFS → starter hydration; binds the sink
 │   │   ├── shell.ts        # in-browser shell over the VFS
 │   │   ├── opfs.ts         # OPFS project store + runtime file sink
 │   │   ├── agent-client.ts  # SSE client for the DeepSeek loop
 │   │   ├── claude-client.ts # Anthropic SDK stream + message conversion
 │   │   ├── claude-config.ts # re-exports shared Claude agent settings
 │   │   ├── agent-tools.ts   # in-tab tool schemas + VFS/bash execution
-│   │   └── api.ts           # Nitro client
+│   │   └── api.ts           # authentication client
 │   └── store/              # runtime · workspace · projects · ui · agent (Zustand)
 ├── server/
-│   ├── routes/api/         # Nitro routes (/api/health, /api/projects,
-│   │                       #   /api/deepseek, /api/anthropic, /api/auth)
-│   └── utils/              # password gate + project validation/storage
+│   ├── routes/api/         # Nitro routes (/api/health, /api/deepseek,
+│   │                       #   /api/anthropic, /api/auth)
+│   └── utils/              # password gate
 ├── shared/
 │   ├── types.ts            # API + agent types
 │   └── claude.ts           # Claude agent model/effort/compaction settings
-└── data/projects/          # Nitro snapshots, created at runtime, git-ignored
 ```
 
-Project code itself lives in the browser's OPFS; `data/projects/` is the
-server-side snapshot backup written by **Save**.
+Project code and the agent transcript live in the browser's OPFS.
 
 ## API
 
@@ -315,10 +306,6 @@ server-side snapshot backup written by **Save**.
 | GET    | `/api/health`       | Service health                           |
 | GET    | `/api/auth`         | Whether a password is required/unlocked  |
 | POST   | `/api/auth`         | Exchange `{ password }` for a no-expiry JWT |
-| GET    | `/api/projects`     | List project metadata                    |
-| POST   | `/api/projects`     | Create/update `{ id?, name, files }`     |
-| GET    | `/api/projects/:id` | Fetch a full snapshot                    |
-| DELETE | `/api/projects/:id` | Delete a saved project                   |
 | GET    | `/api/agent/status` | Proxy route + credential status          |
 | POST   | `/api/deepseek/chat/completions` | JWT-authenticated DeepSeek SSE proxy |
 | POST   | `/api/anthropic/v1/messages` | JWT-authenticated Anthropic Messages proxy |
@@ -329,11 +316,9 @@ All routes except `GET /api/auth` and `POST /api/auth` require
 Anthropic proxy also accepts the JWT as `x-api-key`, which is how the official
 Anthropic SDK authenticates.
 
-Snapshots are capped at 500 files / 2 MB, paths must be absolute, and
-`node_modules` is rejected. Project JSON is stored on disk locally and in Vercel
-Blob when `BLOB_READ_WRITE_TOKEN` is present. Both agent proxies validate the
-Forge JWT, insert the server-side key, and return the upstream stream unchanged;
-the browser agent executes tools locally and mirrors files to OPFS.
+Both agent proxies validate the Forge JWT, insert the server-side key, and
+return the upstream stream unchanged; the browser agent executes tools locally
+and mirrors files to OPFS. Project files are never uploaded to the server.
 
 ### Project archive format
 

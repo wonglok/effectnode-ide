@@ -3,14 +3,10 @@ import {
   CircleHelp,
   Download,
   FilePlus2,
-  FolderKanban,
-  Loader2,
   LogOut,
   RotateCw,
-  Save,
   Upload,
 } from 'lucide-react';
-import { saveProject } from '@/lib/actions';
 import { downloadProjectZip } from '@/lib/download-zip';
 import { readProjectArchive } from '@/lib/project-archive';
 import { runtime } from '@/lib/runtime';
@@ -33,16 +29,15 @@ const STATUS_LABEL: Record<string, string> = {
 
 export function TitleBar() {
   const name = useProjectStore((state) => state.name);
-  const currentId = useProjectStore((state) => state.currentId);
-  const saving = useProjectStore((state) => state.saving);
   const status = useRuntimeStore((state) => state.status);
   const reloadPreview = useRuntimeStore((state) => state.reloadPreview);
   const newProject = useProjectStore((state) => state.newProject);
   const importProject = useProjectStore((state) => state.importProject);
+  const renameProject = useProjectStore((state) => state.renameProject);
 
   const openConfirm = useUiStore((state) => state.openConfirm);
   const closeConfirm = useUiStore((state) => state.closeConfirm);
-  const setProjectsOpen = useUiStore((state) => state.setProjectsOpen);
+  const openPrompt = useUiStore((state) => state.openPrompt);
   const setShortcutsOpen = useUiStore((state) => state.setShortcutsOpen);
   const setTerminalTab = useUiStore((state) => state.setTerminalTab);
   const toast = useUiStore((state) => state.toast);
@@ -61,7 +56,7 @@ export function TitleBar() {
       const fileCount = Object.keys(archive.files).length;
       openConfirm({
         title: `Import “${archive.name}”?`,
-        message: `This replaces the current virtual files with ${fileCount} files from the ZIP (archive v${archive.manifest.version}). The archived agent chat is restored too. Save first if you want to keep them.`,
+        message: `This replaces the current virtual files with ${fileCount} files from the ZIP (archive v${archive.manifest.version}). The archived agent chat is restored too. Download first if you want to keep them.`,
         confirmLabel: 'Import project',
         onConfirm: () => {
           closeConfirm();
@@ -87,7 +82,7 @@ export function TitleBar() {
     openConfirm({
       title: 'Start a new project?',
       message:
-        'The current virtual files will be replaced with the starter template. Save first if you want to keep them.',
+        'The current virtual files will be replaced with the starter template. Download first if you want to keep them.',
       confirmLabel: 'Start new project',
       onConfirm: () => {
         closeConfirm();
@@ -113,11 +108,20 @@ export function TitleBar() {
           <span className="brand-name">Forge</span>
         </div>
         <span className="titlebar-divider" />
-        <button className="project-chip" onClick={() => setProjectsOpen(true)} title="Open projects (⌘K)">
+        <button
+          className="project-chip"
+          onClick={() =>
+            openPrompt({
+              title: 'Rename project',
+              label: 'Project name',
+              initialValue: name,
+              confirmLabel: 'Rename',
+              onConfirm: renameProject,
+            })
+          }
+          title="Rename project"
+        >
           <span className="project-chip-name">{name}</span>
-          <span className={`project-chip-state ${currentId ? 'is-saved' : ''}`}>
-            {currentId ? 'saved' : 'unsaved'}
-          </span>
         </button>
       </div>
 
@@ -125,17 +129,6 @@ export function TitleBar() {
         <button className="tool-button" onClick={onNew} title="New project">
           <FilePlus2 size={13} />
           <span className="tool-label">New</span>
-        </button>
-
-        <button className="tool-button" onClick={saveProject} disabled={saving} title="Save project (⌘S)">
-          {saving ? <Loader2 size={13} className="spin" /> : <Save size={13} />}
-          <span className="tool-label">Save</span>
-          <kbd>⌘S</kbd>
-        </button>
-
-        <button className="tool-button" onClick={() => setProjectsOpen(true)} title="Projects (⌘K)">
-          <FolderKanban size={14} />
-          <span className="tool-label">Projects</span>
         </button>
 
         <button

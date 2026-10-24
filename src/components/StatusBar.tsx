@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { basename } from '@/lib/paths';
 import { languageLabel } from '@/lib/file-tree';
-import { useProjectStore } from '@/store/projects';
 import { useRuntimeStore } from '@/store/runtime';
 import { useWorkspaceStore } from '@/store/workspace';
 
@@ -11,8 +10,6 @@ export function StatusBar() {
   const status = useRuntimeStore((state) => state.status);
   const lastHmrAt = useRuntimeStore((state) => state.lastHmrAt);
   const lastHmrPath = useRuntimeStore((state) => state.lastHmrPath);
-  const serverOnline = useProjectStore((state) => state.serverOnline);
-  const currentId = useProjectStore((state) => state.currentId);
 
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -38,12 +35,14 @@ export function StatusBar() {
           {hmrRecent && lastHmrPath ? `HMR · ${basename(lastHmrPath)}` : 'HMR listening'}
         </span>
 
-        <span className="statusbar-item" title="Nitro persistence API">
-          <span className={`mini-dot ${serverOnline ? 'is-online' : 'is-offline'}`} />
-          Nitro {serverOnline === null ? '…' : serverOnline ? 'online' : 'offline'}
+        <span
+          className="statusbar-item"
+          title="Project files are stored in the browser's Origin Private File System"
+        >
+          <span className="mini-dot is-online" />
+          OPFS
         </span>
 
-        <span className="statusbar-item">{currentId ? 'synced' : 'local'}</span>
         <span className="statusbar-item statusbar-cursor">
           Ln {cursor.line}, Col {cursor.column}
         </span>

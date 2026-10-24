@@ -1,4 +1,3 @@
-import { useProjectStore } from '@/store/projects';
 import { useUiStore } from '@/store/ui';
 import { useWorkspaceStore } from '@/store/workspace';
 import { joinPath, normalizePath } from './paths';
@@ -29,7 +28,6 @@ const HELP = `Forge shell — commands run against the virtual file system
   echo <text> [> file] print text or write it to a file
   tree [dir]           print the directory tree
   open <file>          open a file in the editor
-  save                 save the project through Nitro
   clear                clear this terminal
   help                 show this message
 
@@ -287,15 +285,6 @@ export async function runShellCommand(rawInput: string, cwd: string): Promise<Sh
       }
       useWorkspaceStore.getState().openFile(target);
       result.lines.push({ kind: 'muted', text: `opened ${target}` });
-      break;
-    }
-
-    case 'save': {
-      const saved = await useProjectStore.getState().save();
-      result.lines.push({
-        kind: saved ? 'muted' : 'error',
-        text: saved ? 'project saved through the Nitro API' : 'save failed — check the console',
-      });
       break;
     }
 

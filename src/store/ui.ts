@@ -44,7 +44,6 @@ interface UiState {
   agentWidth: number;
   previewRatio: number;
   terminalHeight: number;
-  projectsOpen: boolean;
   shortcutsOpen: boolean;
   prompt: PromptRequest | null;
   confirm: ConfirmRequest | null;
@@ -63,7 +62,6 @@ interface UiState {
   setAgentWidth: (width: number) => void;
   setPreviewRatio: (ratio: number) => void;
   setTerminalHeight: (height: number) => void;
-  setProjectsOpen: (open: boolean) => void;
   setShortcutsOpen: (open: boolean) => void;
   openPrompt: (request: PromptRequest) => void;
   closePrompt: () => void;
@@ -87,7 +85,6 @@ export const useUiStore = create<UiState>()(
       agentWidth: 380,
       previewRatio: 0.42,
       terminalHeight: 176,
-      projectsOpen: false,
       shortcutsOpen: false,
       prompt: null,
       confirm: null,
@@ -129,7 +126,6 @@ export const useUiStore = create<UiState>()(
         set({ previewRatio: clamp(ratio, 0.24, 0.72) }),
       setTerminalHeight: (height) =>
         set({ terminalHeight: clamp(height, 110, 420) }),
-      setProjectsOpen: (open) => set({ projectsOpen: open }),
       setShortcutsOpen: (open) => set({ shortcutsOpen: open }),
       openPrompt: (request) => set({ prompt: request }),
       closePrompt: () => set({ prompt: null }),

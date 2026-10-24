@@ -124,7 +124,6 @@ export function EditorPane() {
           <div className="empty-keys">
             <span><kbd>⌘B</kbd> explorer</span>
             <span><kbd>⌘J</kbd> terminal</span>
-            <span><kbd>⌘S</kbd> save project</span>
           </div>
         </div>
       )}

@@ -111,10 +111,10 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     headers: crossOriginHeaders,
-    // Runtime state (project snapshots) and build output are not app source;
-    // watching them would force page reloads while the app is in use.
+    // Build output is not app source; watching it would force page reloads
+    // while the app is in use.
     watch: {
-      ignored: ['**/data/**', '**/.output/**', '**/.nitro/**'],
+      ignored: ['**/.output/**', '**/.nitro/**'],
     },
   },
   preview: {

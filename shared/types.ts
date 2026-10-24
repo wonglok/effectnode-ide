@@ -1,37 +1,10 @@
 /** Types shared by the React client and the Nitro API routes. */
 
-export interface ProjectMeta {
-  id: string;
-  name: string;
-  createdAt: string;
-  updatedAt: string;
-  fileCount: number;
-}
-
-export interface ProjectSnapshot extends ProjectMeta {
-  files: Record<string, string>;
-}
-
-export interface ProjectListResponse {
-  projects: ProjectMeta[];
-}
-
-export interface SaveProjectPayload {
-  id?: string;
-  name: string;
-  files: Record<string, string>;
-}
-
 export interface HealthResponse {
   ok: boolean;
   service: string;
   version: string;
   time: string;
-}
-
-export interface DeleteResponse {
-  ok: boolean;
-  id: string;
 }
 
 /* ── Agent ─────────────────────────────────────────────────── */

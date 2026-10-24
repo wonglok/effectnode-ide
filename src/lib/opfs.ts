@@ -11,8 +11,8 @@ import type { FileSink } from './runtime';
  *   sandbox/<ide-sandbox-id>/projects/<project-id>/.forge/project.json
  *
  * The almostnode VirtualFS stays the live working tree; every mutation is
- * mirrored here, and boot hydrates from here before falling back to the Nitro
- * snapshot or the starter template.
+ * mirrored here, and boot hydrates from here before falling back to the starter
+ * template.
  */
 
 const SANDBOX_ID_KEY = 'forge.sandboxId';
@@ -525,7 +525,7 @@ export async function requestPersistentStorage(): Promise<void> {
 
 let bound: { projectId: string; name: string } | null = null;
 
-/** Point the runtime sink at the active project (server id or local id). */
+/** Point the runtime sink at the active OPFS project. */
 export function bindOpfsProject(projectId: string | null, name = ''): void {
   bound = validId(projectId) ? { projectId, name } : null;
   if (bound) {

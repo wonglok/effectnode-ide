@@ -3,7 +3,6 @@ import { ActivityRail } from '@/components/ActivityRail';
 import {
   ConfirmDialog,
   PromptDialog,
-  ProjectsDialog,
   ShortcutsDialog,
 } from '@/components/Dialogs';
 import { EditorPane } from '@/components/EditorPane';
@@ -15,7 +14,6 @@ import { TitleBar } from '@/components/TitleBar';
 import { Toasts } from '@/components/Toasts';
 import { AgentPanel } from '@/components/agent/AgentPanel';
 import { AgentSetupDialog } from '@/components/agent/AgentSetupDialog';
-import { saveProject } from '@/lib/actions';
 import { bootstrap } from '@/lib/bootstrap';
 import { useAgentStore } from '@/store/agent';
 import { useProjectStore } from '@/store/projects';
@@ -56,18 +54,12 @@ export default function App() {
         const input = document.getElementById('agent-input') as HTMLTextAreaElement | null;
         input?.focus();
         input?.scrollIntoView({ block: 'nearest' });
-      } else if (key === 's') {
-        event.preventDefault();
-        saveProject();
       } else if (key === 'b') {
         event.preventDefault();
         ui.toggleExplorer();
       } else if (key === 'j') {
         event.preventDefault();
         ui.toggleTerminal();
-      } else if (key === 'k') {
-        event.preventDefault();
-        ui.setProjectsOpen(!ui.projectsOpen);
       }
     };
 
@@ -191,7 +183,6 @@ export default function App() {
 
       <PromptDialog />
       <ConfirmDialog />
-      <ProjectsDialog />
       <ShortcutsDialog />
       <AgentSetupDialog />
       <Toasts />
