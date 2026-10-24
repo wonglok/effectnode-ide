@@ -160,10 +160,10 @@ export class SectionRenderPipeline {
     toIndex: number,
   ) {
     const pair = `${Math.min(fromIndex, toIndex)}-${Math.max(fromIndex, toIndex)}`;
-    if (pair === "2-3") {
+    if (pair === "4-5") {
       return this.crossZoomTransitionNode(fromTexture, toTexture);
     }
-    if (pair === "1-2") {
+    if (pair === "3-4") {
       return this.pageCurlTransitionNode(fromTexture, toTexture);
     }
     return this.liquidTransitionNode(fromTexture, toTexture);

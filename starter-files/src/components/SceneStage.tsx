@@ -3,6 +3,7 @@ import * as THREE from "three/webgpu";
 import { pass } from "three/tsl";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { SECTIONS } from "../sections/registry.ts";
+import { buildSoftRoom } from "../sections/soft-room/index.ts";
 import { buildForceShield } from "../sections/force-shield/index.ts";
 import { buildKinetic } from "../sections/kinetic/index.ts";
 import { buildFlow } from "../sections/flow-shield/index.ts";
@@ -14,6 +15,7 @@ import { getSectionPhaseAt } from "../lib/scroll-phases.ts";
 import { useScrollerStore } from "../store/useScrollerStore.ts";
 
 const BUILDERS = [
+  buildSoftRoom,
   buildForceShield,
   buildKinetic,
   buildFlow,
@@ -136,6 +138,8 @@ export function SceneStage() {
         renderer.setSize(width, height, false);
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
         renderer.toneMappingExposure = 1.06;
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.VSMShadowMap;
         await renderer.init();
       } catch (error) {
         console.warn("WebGPU unavailable, using the static stage:", error);
@@ -154,8 +158,11 @@ export function SceneStage() {
         roomEnv = new RoomEnvironment();
         envTarget = pmrem.fromScene(roomEnv, 0.04);
         pmrem.dispose();
-        scenes[0].environment = envTarget.texture;
-        scenes[0].environmentIntensity = 0.9;
+        SECTIONS.forEach((section, index) => {
+          if (section.id !== "kinetic") return;
+          scenes[index].environment = envTarget!.texture;
+          scenes[index].environmentIntensity = 0.9;
+        });
       } catch (error) {
         console.warn("Glass environment unavailable:", error);
       }

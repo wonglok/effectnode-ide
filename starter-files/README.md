@@ -1,6 +1,6 @@
 # MY COMPANY — starter
 
-A five-chapter, scroll-driven landing page that runs entirely inside the Forge
+A six-chapter, scroll-driven landing page that runs entirely inside the Forge
 preview. No video and no image assets: the scenes are real-time three.js
 WebGPURenderer worlds shaded with TSL, the story is steered by a small Zustand
 store, and React Router's `HashRouter` keeps the URL in step with the chapter.
@@ -14,14 +14,16 @@ to a static CSS stage instead of falling back to Canvas 2D.
 
 ## The experience
 
-- **01 Force Shield** — a TSL force-field sphere with a triplanar hex grid,
+- **01 Soft Room** — a sunlit interior with a shoji window casting a soft
+  grid of light, drifting pink spheres, and a warm lantern.
+- **02 Force Shield** — a TSL force-field sphere with a triplanar hex grid,
   flowing noise, dissolving reveal, and click/auto impact rings.
-- **02 Kinetic** — a field of orbiting particles and a multiline
+- **03 Kinetic** — a field of orbiting particles and a multiline
   “Welcome to my template” title drawn with `TextGeometry` in transmission
   glass.
-- **03 Flow Lines** — force lines bending around a silhouette.
-- **04 Live Env** — a wireframe skyline, receding grid, and floating monoliths.
-- **05 Alpha 6** — glass shards built from gradients and geometry.
+- **04 Flow Lines** — force lines bending around a silhouette.
+- **05 Live Env** — a wireframe skyline, receding grid, and floating monoliths.
+- **06 Alpha 6** — glass shards built from gradients and geometry.
 
 Scroll (or drag on touch) to move between chapters. The numbered circles on the
 right jump directly to a chapter with a deliberately slower spring than wheel
@@ -39,8 +41,10 @@ the active chapter (`#/scene-02`), and reloading resumes at that chapter.
 - `src/components/StoryRouter.tsx` — bridges `HashRouter` and the scroll store:
   an active-chapter change rewrites the hash, and a `/scene-02` URL (including
   the legacy `#scene-02` form) snaps the engine to that chapter on load.
-- `src/components/SceneStage.tsx` — the WebGPURenderer and five chapter worlds.
+- `src/components/SceneStage.tsx` — the WebGPURenderer and six chapter worlds.
   Each scene folder owns its drawing code:
+  - `src/sections/soft-room/index.ts` — sunlit room, shoji grid shadows, and
+    floating spheres.
   - `src/sections/force-shield/index.ts` — TSL force-field sphere with hex grid,
     flow noise, reveal dissolve, and impact rings.
   - `src/sections/kinetic/index.ts` — instanced glints plus the glass title.
@@ -65,7 +69,7 @@ the active chapter (`#/scene-02`), and reloading resumes at that chapter.
 - `src/components/SplashScreen.tsx` — boot overlay; it leaves once the canvas
   has painted its first frames.
 - `src/lib/audio-engine.ts` — synthesised click and ambient pad (no audio files).
-- `src/sections/registry.ts` — the five chapters: metadata, accents, surfaces.
+- `src/sections/registry.ts` — the six chapters: metadata, accents, surfaces.
 
 ## Styling
 
