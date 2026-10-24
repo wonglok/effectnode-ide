@@ -1,27 +1,22 @@
 import { create } from "zustand";
 import type {
   AgentChatMessage,
-  AgentEngine,
   AgentStatusResponse,
   AgentTodoItem,
-  AgentTodoStatus,
   AgentToolCall,
 } from "../../shared/types";
-import { fetchAgentStatus, streamAgentChat } from "@/lib/agent-client";
+import { autoCompactCharBudget, PI_AGENT } from "../../shared/pi";
+import { fetchAgentStatus } from "@/lib/agent-client";
 import {
   readPersistedAgentState,
   serializeAgentState,
   writePersistedAgentState,
 } from "@/lib/agent-state";
-import { streamClaudeChat } from "@/lib/claude-client";
 import { createPiSession } from "@/lib/pi-harness";
-import { autoCompactCharBudget } from "@/lib/claude-config";
 import { getBoundProjectId } from "@/lib/opfs";
 import {
-  AGENT_TOOLS,
   buildAgentSystemPrompt,
   describeToolCall,
-  executeAgentTool,
 } from "@/lib/agent-tools";
 import {
   playCompletionChime,
@@ -32,33 +27,11 @@ import { useRuntimeStore } from "./runtime";
 import { useUiStore } from "./ui";
 import { useWorkspaceStore } from "./workspace";
 
-const MAX_STEPS = 100;
+const MAX_STEPS = PI_AGENT.maxSteps;
 const MAX_HISTORY_MESSAGES = 40;
-const ENGINE_STORAGE_KEY = "forge.agent.engine";
 const EMPTY_RETRY_SECONDS = 3;
 const EMPTY_RETRY_PROMPT = "keep going";
 const LIMIT_CONTINUE_SECONDS = 3;
-
-/** Pi is the default frontend harness; Claude and DeepSeek stay available as
- * alternate transports, and an explicit prior choice is preserved. */
-function loadEngine(): AgentEngine {
-  if (typeof window === "undefined") return "pi";
-  try {
-    const stored = window.localStorage.getItem(ENGINE_STORAGE_KEY);
-    if (stored === "claude" || stored === "deepseek" || stored === "pi") {
-      return stored;
-    }
-    return "pi";
-  } catch {
-    return "pi";
-  }
-}
-
-const TODO_STATUSES = new Set<AgentTodoStatus>([
-  "pending",
-  "in_progress",
-  "completed",
-]);
 
 export type AgentRunStatus = "idle" | "running";
 
@@ -108,13 +81,9 @@ export interface AgentLimitCountdown {
 }
 
 export interface AgentState {
-  /** DeepSeek proxy status reported by the Nitro server. */
+  /** Pi harness status reported by the Nitro server. */
   status: AgentStatusResponse | null;
   statusLoaded: boolean;
-  setupOpen: boolean;
-  /** Which frontend loop drives the agent. Both run in the browser. */
-  engine: AgentEngine;
-  setEngine: (engine: AgentEngine) => void;
   runStatus: AgentRunStatus;
   runStatusText: string | null;
   messages: AgentMessage[];
@@ -131,8 +100,6 @@ export interface AgentState {
   undoAvailable: boolean;
 
   init: () => Promise<void>;
-  openSetup: () => void;
-  closeSetup: () => void;
   send: (text: string) => Promise<void>;
   /** Resume the loop after the max-step guard without a new user message. */
   keepGoing: () => Promise<void>;
@@ -169,8 +136,6 @@ function clearPersistTimer(): void {
 }
 
 function isConfigured(state: AgentState): boolean {
-  if (state.engine === "claude") return Boolean(state.status?.claude?.configured);
-  if (state.engine === "pi") return Boolean(state.status?.pi?.configured);
   return Boolean(state.status?.configured);
 }
 
@@ -195,8 +160,8 @@ function trimHistory(history: AgentChatMessage[]): AgentChatMessage[] {
   let slice = history.slice(-MAX_HISTORY_MESSAGES);
   while (slice.length > 0 && slice[0].role === "tool") slice.shift();
 
-  // CLAUDE_CODE_AUTO_COMPACT_WINDOW: drop the oldest turns once the transcript
-  // grows past the configured budget (rough chars-per-token estimate).
+  // Drop the oldest turns once the transcript grows past the Pi harness's
+  // auto-compact budget (rough chars-per-token estimate).
   let characters = slice.reduce(
     (total, message) => total + messageChars(message),
     0,
@@ -216,38 +181,6 @@ function finalizeStreaming(messages: AgentMessage[]): AgentMessage[] {
       ? { ...message, streaming: false }
       : message,
   );
-}
-
-function parseTodos(rawArguments: string): AgentTodoItem[] | null {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(rawArguments);
-  } catch {
-    return null;
-  }
-  const raw = (parsed as { todos?: unknown } | null)?.todos;
-  if (!Array.isArray(raw)) return null;
-
-  const todos: AgentTodoItem[] = [];
-  for (const entry of raw) {
-    if (!entry || typeof entry !== "object") continue;
-    const content = (entry as { content?: unknown }).content;
-    const status = (entry as { status?: unknown }).status;
-    if (typeof content !== "string" || !content.trim()) continue;
-    if (
-      typeof status !== "string" ||
-      !TODO_STATUSES.has(status as AgentTodoStatus)
-    )
-      continue;
-    todos.push({ content: content.trim(), status: status as AgentTodoStatus });
-  }
-  return todos;
-}
-
-function todoSummary(todos: AgentTodoItem[]): string {
-  const count = (status: AgentTodoStatus) =>
-    todos.filter((todo) => todo.status === status).length;
-  return `Updated todo list: ${count("pending")} pending, ${count("in_progress")} in progress, ${count("completed")} completed.`;
 }
 
 interface RunLoopOptions {
@@ -287,8 +220,10 @@ export const useAgentStore = create<AgentState>((set, get) => {
     if (!isConfigured(get())) {
       set({
         emptyResponseRetry: { ...current, secondsLeft: 0, status: "cancelled" },
-        setupOpen: true,
       });
+      addNotice(
+        "The Pi harness is not configured. Set DEEPSEEK_API_KEY (or AGENT_API_KEY) in .env.local and restart the server.",
+      );
       return;
     }
 
@@ -367,8 +302,10 @@ export const useAgentStore = create<AgentState>((set, get) => {
     if (!isConfigured(get())) {
       set({
         limitCountdown: { ...current, secondsLeft: 0, status: "cancelled" },
-        setupOpen: true,
       });
+      addNotice(
+        "The Pi harness is not configured. Set DEEPSEEK_API_KEY (or AGENT_API_KEY) in .env.local and restart the server.",
+      );
       return;
     }
 
@@ -424,313 +361,6 @@ export const useAgentStore = create<AgentState>((set, get) => {
     set({
       limitCountdown: { ...current, secondsLeft: 0, status: "cancelled" },
     });
-  };
-
-  const runLoop = async ({
-    baseHistory,
-    undoSnapshot,
-    controller,
-    runId,
-  }: RunLoopOptions): Promise<RunOutcome> => {
-    let history = baseHistory;
-    let changed = false;
-
-    const undoPatch = () =>
-      changed && undoSnapshot ? { undoSnapshot, undoAvailable: true } : {};
-
-    try {
-      for (let step = 0; step < MAX_STEPS; step += 1) {
-        if (controller.signal.aborted || runId !== runSequence)
-          return "stopped";
-        set({ runStatusText: `Thinking · step ${step + 1}` });
-
-        const assistantDisplayId = makeId("assistant");
-        set((current) => ({
-          messages: [
-            ...current.messages,
-            {
-              id: assistantDisplayId,
-              role: "assistant",
-              content: "",
-              reasoning: "",
-              streaming: true,
-              at: Date.now(),
-            },
-          ],
-        }));
-
-        let stepReasoning = "";
-
-        const onDelta = (chunk: string) => {
-          if (runId !== runSequence) return;
-          set((current) => ({
-            messages: current.messages.map((message) =>
-              message.role === "assistant" && message.id === assistantDisplayId
-                ? { ...message, content: message.content + chunk }
-                : message,
-            ),
-          }));
-        };
-
-        const onReasoning = (chunk: string) => {
-          stepReasoning += chunk;
-          if (runId !== runSequence) return;
-          set((current) => ({
-            messages: current.messages.map((message) =>
-              message.role === "assistant" && message.id === assistantDisplayId
-                ? { ...message, reasoning: (message.reasoning ?? "") + chunk }
-                : message,
-            ),
-          }));
-        };
-
-        const engine = get().engine;
-        const result =
-          engine === "claude"
-            ? await streamClaudeChat({
-                system: buildAgentSystemPrompt(),
-                messages: trimHistory(history),
-                tools: AGENT_TOOLS,
-                signal: controller.signal,
-                onDelta,
-                onReasoning,
-              })
-            : await streamAgentChat({
-                messages: [
-                  { role: "system", content: buildAgentSystemPrompt() },
-                  ...trimHistory(history),
-                ],
-                tools: AGENT_TOOLS,
-                signal: controller.signal,
-                onDelta,
-                onReasoning,
-              });
-
-        if (runId !== runSequence) return "stopped";
-
-        const toolCalls = result.toolCalls;
-        const hasTools = toolCalls.length > 0;
-
-        set((current) => ({
-          messages: current.messages.flatMap((message) => {
-            if (
-              message.role !== "assistant" ||
-              message.id !== assistantDisplayId
-            )
-              return [message];
-            // Keep a tool-only step when it produced a thinking log.
-            if (
-              !result.content.trim() &&
-              !(message.reasoning ?? "").trim() &&
-              hasTools
-            ) {
-              return [];
-            }
-            return [{ ...message, content: result.content, streaming: false }];
-          }),
-        }));
-
-        const assistantMessage: AgentChatMessage = {
-          role: "assistant",
-          content: result.content || null,
-        };
-        // Claude requires thinking blocks to be replayed alongside tool calls.
-        if (engine === "claude") {
-          const thinking = (result.reasoning ?? stepReasoning).trim();
-          if (thinking) {
-            assistantMessage.thinking = thinking;
-            if (result.reasoningSignature) {
-              assistantMessage.thinking_signature = result.reasoningSignature;
-            }
-          }
-        }
-        if (hasTools) assistantMessage.tool_calls = toolCalls;
-        history = [...history, assistantMessage];
-        set({ history });
-
-        if (!hasTools) {
-          if (!result.content.trim()) {
-            const noticeId = addNotice("The model returned an empty response.");
-            scheduleEmptyResponseRetry(noticeId);
-          }
-          break;
-        }
-
-        for (const call of toolCalls) {
-          if (controller.signal.aborted || runId !== runSequence) break;
-
-          // The plan has its own panel; keep it out of the tool-card stream.
-          if (call.function.name === "todo_write") {
-            const todos = parseTodos(call.function.arguments);
-            if (todos) {
-              set({ todos, runStatusText: "Updating the task plan…" });
-              history = [
-                ...history,
-                {
-                  role: "tool",
-                  tool_call_id: call.id,
-                  content: todoSummary(todos),
-                },
-              ];
-            } else {
-              history = [
-                ...history,
-                {
-                  role: "tool",
-                  tool_call_id: call.id,
-                  content:
-                    "Error: todos must be an array of { content, status } items.",
-                },
-              ];
-            }
-            set({ history });
-            continue;
-          }
-
-          const preview = describeToolCall(call);
-          const displayId = makeId("tool");
-          set({ runStatusText: preview.summary });
-
-          set((current) => ({
-            messages: [
-              ...current.messages,
-              {
-                id: displayId,
-                role: "tool",
-                at: Date.now(),
-                tool: {
-                  name: preview.name,
-                  summary: preview.summary,
-                  path: preview.path,
-                  status: "running",
-                },
-              },
-            ],
-          }));
-
-          const outcome = await executeAgentTool(
-            preview.name,
-            call.function.arguments,
-          );
-          if (runId !== runSequence) return "stopped";
-          changed = changed || outcome.changed;
-
-          set((current) => ({
-            messages: current.messages.map((message) =>
-              message.role === "tool" && message.id === displayId
-                ? {
-                    ...message,
-                    tool: {
-                      name: preview.name,
-                      summary: outcome.summary,
-                      detail: outcome.detail,
-                      path: outcome.path ?? preview.path,
-                      status: outcome.status,
-                    },
-                  }
-                : message,
-            ),
-          }));
-
-          history = [
-            ...history,
-            { role: "tool", tool_call_id: call.id, content: outcome.output },
-          ];
-          set({ history });
-        }
-
-        if (controller.signal.aborted) break;
-
-        if (step === MAX_STEPS - 1) {
-          const limitId = makeId("limit");
-          set((current) => ({
-            runStatus: "idle",
-            runStatusText: null,
-            messages: [
-              ...finalizeStreaming(current.messages),
-              {
-                id: limitId,
-                role: "limit",
-                steps: MAX_STEPS,
-                at: Date.now(),
-              },
-            ],
-            ...undoPatch(),
-          }));
-          scheduleLimitContinue(limitId);
-          runtime.log("warn", `Agent stopped at the ${MAX_STEPS}-step limit`);
-          return "limit";
-        }
-      }
-
-      if (runId !== runSequence) return "stopped";
-
-      if (controller.signal.aborted) {
-        set({
-          runStatus: "idle",
-          runStatusText: null,
-          history: baseHistory,
-          messages: finalizeStreaming(get().messages),
-          ...undoPatch(),
-        });
-        addNotice("Stopped.");
-        return "stopped";
-      }
-
-      set((current) => ({
-        runStatus: "idle",
-        runStatusText: null,
-        messages: [
-          ...finalizeStreaming(current.messages),
-          { id: makeId("refresh"), role: "refresh", at: Date.now() },
-        ],
-        ...undoPatch(),
-      }));
-      // Task complete: reload the preview so the user sees the final state.
-      useRuntimeStore.getState().reloadPreview();
-      playCompletionChime(3);
-      return "complete";
-    } catch (error) {
-      if (runId !== runSequence) return "stopped";
-
-      const aborted =
-        controller.signal.aborted ||
-        (error instanceof DOMException && error.name === "AbortError");
-      const message = aborted
-        ? "Stopped."
-        : error instanceof Error
-          ? error.message
-          : String(error);
-
-      set({
-        runStatus: "idle",
-        runStatusText: null,
-        history: baseHistory,
-        error: aborted ? null : message,
-        messages: finalizeStreaming(get().messages),
-        ...undoPatch(),
-      });
-
-      if (aborted) {
-        addNotice("Stopped.");
-      } else {
-        set((current) => ({
-          messages: [
-            ...current.messages,
-            {
-              id: makeId("error"),
-              role: "error",
-              content: message,
-              at: Date.now(),
-            },
-          ],
-        }));
-        runtime.log("error", `Agent: ${message}`);
-      }
-      return aborted ? "stopped" : "error";
-    } finally {
-      if (activeRun?.id === runId) activeRun = null;
-    }
   };
 
   /**
@@ -1043,9 +673,6 @@ export const useAgentStore = create<AgentState>((set, get) => {
     }
   };
 
-  const runSelectedLoop = (options: RunLoopOptions): Promise<RunOutcome> =>
-    get().engine === "pi" ? runPiLoop(options) : runLoop(options);
-
   /** Start one prompt. Callers must ensure the loop is idle. */
   const startPrompt = async (text: string): Promise<RunOutcome> => {
     const state = get();
@@ -1074,7 +701,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
       ],
     });
 
-    return runSelectedLoop({
+    return runPiLoop({
       baseHistory,
       undoSnapshot: snapshot,
       controller,
@@ -1107,8 +734,6 @@ export const useAgentStore = create<AgentState>((set, get) => {
   return {
     status: null,
     statusLoaded: false,
-    setupOpen: false,
-    engine: loadEngine(),
     runStatus: "idle",
     runStatusText: null,
     messages: [],
@@ -1137,26 +762,15 @@ export const useAgentStore = create<AgentState>((set, get) => {
       return initPromise;
     },
 
-    openSetup: () => set({ setupOpen: true }),
-    closeSetup: () => set({ setupOpen: false }),
-
-    setEngine: (engine) => {
-      if (get().runStatus === "running" || get().engine === engine) return;
-      try {
-        window.localStorage.setItem(ENGINE_STORAGE_KEY, engine);
-      } catch {
-        // Storage can be unavailable in private contexts.
-      }
-      set({ engine });
-    },
-
     send: async (rawText) => {
       const text = rawText.trim();
       if (!text) return;
 
       const state = get();
       if (!isConfigured(state)) {
-        set({ setupOpen: true });
+        addNotice(
+          "The Pi harness is not configured. Set DEEPSEEK_API_KEY (or AGENT_API_KEY) in .env.local and restart the server.",
+        );
         return;
       }
 
@@ -1193,7 +807,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
         ),
       }));
 
-      const outcome = await runSelectedLoop({
+      const outcome = await runPiLoop({
         baseHistory: state.history,
         undoSnapshot: snapshot,
         controller,
@@ -1311,13 +925,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
       }
 
       if (persisted) {
-        try {
-          window.localStorage.setItem(ENGINE_STORAGE_KEY, persisted.engine);
-        } catch {
-          // Storage can be unavailable in private contexts.
-        }
         set({
-          engine: persisted.engine,
           messages: persisted.messages,
           history: persisted.history,
           todos: persisted.todos,
@@ -1327,7 +935,6 @@ export const useAgentStore = create<AgentState>((set, get) => {
           runStatus: "idle",
           runStatusText: null,
           error: null,
-          setupOpen: false,
         });
       } else {
         set({
@@ -1340,7 +947,6 @@ export const useAgentStore = create<AgentState>((set, get) => {
           runStatus: "idle",
           runStatusText: null,
           error: null,
-          setupOpen: false,
         });
       }
 
@@ -1367,7 +973,6 @@ export const useAgentStore = create<AgentState>((set, get) => {
         runStatus: "idle",
         runStatusText: null,
         error: null,
-        setupOpen: false,
       });
       persistEnabled = true;
     },
@@ -1422,7 +1027,6 @@ function scheduleAgentStatePersistence(): void {
 useAgentStore.subscribe((state, previous) => {
   if (!persistEnabled) return;
   if (
-    state.engine === previous.engine &&
     state.messages === previous.messages &&
     state.history === previous.history &&
     state.todos === previous.todos &&

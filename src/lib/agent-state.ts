@@ -4,7 +4,6 @@ import {
 } from '../../shared/agent-state';
 import type {
   AgentChatMessage,
-  AgentEngine,
   AgentTodoItem,
   AgentTodoStatus,
 } from '../../shared/types';
@@ -23,7 +22,6 @@ import { opfsProjectStore } from './opfs';
 export interface PersistedAgentState {
   version: typeof AGENT_STATE_VERSION;
   savedAt: string;
-  engine: AgentEngine;
   messages: AgentMessage[];
   history: AgentChatMessage[];
   todos: AgentTodoItem[];
@@ -33,7 +31,6 @@ export interface PersistedAgentState {
 }
 
 export interface PersistableAgentState {
-  engine: AgentEngine;
   messages: AgentMessage[];
   history: AgentChatMessage[];
   todos: AgentTodoItem[];
@@ -252,7 +249,6 @@ export function serializeAgentState(state: PersistableAgentState): string {
   const payload: PersistedAgentState = {
     version: AGENT_STATE_VERSION,
     savedAt: new Date().toISOString(),
-    engine: state.engine,
     messages: state.messages.map((message) =>
       message.role === 'assistant' ? { ...message, streaming: false } : message
     ),
@@ -296,12 +292,6 @@ export function parseAgentState(raw: string | null): PersistedAgentState | null 
     version: AGENT_STATE_VERSION,
     savedAt:
       typeof parsed.savedAt === 'string' ? parsed.savedAt : new Date(0).toISOString(),
-    engine:
-      parsed.engine === 'claude' ||
-      parsed.engine === 'deepseek' ||
-      parsed.engine === 'pi'
-        ? parsed.engine
-        : 'pi',
     messages: normalizeMessages(parsed.messages),
     history: normalizeHistory(parsed.history),
     todos: normalizeTodos(parsed.todos),

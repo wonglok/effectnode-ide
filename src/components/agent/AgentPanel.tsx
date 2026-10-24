@@ -15,7 +15,6 @@ import {
   Play,
   RefreshCw,
   Search,
-  Settings2,
   Sparkles,
   Square,
   SquareTerminal,
@@ -23,7 +22,6 @@ import {
   Undo2,
   X,
 } from "lucide-react";
-import type { AgentEngine } from "../../../shared/types";
 import {
   selectAgentConfigured,
   useAgentStore,
@@ -373,13 +371,7 @@ function PromptQueue({ running }: { running: boolean }) {
   );
 }
 
-function AgentLoader({
-  label,
-  engine,
-}: {
-  label: string;
-  engine: AgentEngine;
-}) {
+function AgentLoader({ label }: { label: string }) {
   return (
     <div className="agent-loader" role="status" aria-live="polite">
       <svg
@@ -408,13 +400,7 @@ function AgentLoader({
       </svg>
       <span className="agent-loader-copy">
         <strong>{label || "Working…"}</strong>
-        <span>
-          {engine === "claude"
-            ? "Frontend Claude agent · Anthropic proxy · JWT auth"
-            : engine === "pi"
-              ? "Pi agent harness · pi-agent-core · JWT proxy"
-              : "Frontend agent · DeepSeek proxy · JWT auth"}
-        </span>
+        <span>Pi agent harness · pi-agent-core · JWT auth</span>
       </span>
       <span className="agent-loader-bars" aria-hidden="true">
         <i />
@@ -479,31 +465,12 @@ export function AgentPanel() {
   const undoAvailable = useAgentStore((state) => state.undoAvailable);
   const statusLoaded = useAgentStore((state) => state.statusLoaded);
   const status = useAgentStore((state) => state.status);
-  const engine = useAgentStore((state) => state.engine);
-  const setEngine = useAgentStore((state) => state.setEngine);
-  const model =
-    engine === "claude"
-      ? status?.claude?.model ?? ""
-      : engine === "pi"
-        ? status?.pi?.model ?? ""
-        : status?.model ?? "";
-  const provider =
-    engine === "claude"
-      ? "anthropic"
-      : engine === "pi"
-        ? status?.pi?.provider ?? "pi"
-        : status?.provider ?? "";
-  const proxyUrl =
-    engine === "claude"
-      ? status?.claude?.proxyUrl
-      : engine === "pi"
-        ? status?.pi?.proxyUrl
-        : status?.proxyUrl;
+  const model = status?.model ?? "";
+  const provider = status?.provider ?? "pi";
   const configured = useAgentStore(selectAgentConfigured);
   const send = useAgentStore((state) => state.send);
   const stop = useAgentStore((state) => state.stop);
   const init = useAgentStore((state) => state.init);
-  const openSetup = useAgentStore((state) => state.openSetup);
   const clear = useAgentStore((state) => state.clear);
   const restoreLastRun = useAgentStore((state) => state.restoreLastRun);
   const keepGoing = useAgentStore((state) => state.keepGoing);
@@ -542,12 +509,13 @@ export function AgentPanel() {
   };
 
   const submit = () => {
-    if (!configured) {
-      openSetup();
-      return;
-    }
     const text = draft.trim();
     if (!text) return;
+    if (!configured) {
+      // The store adds a configuration notice; keep the draft for later.
+      void send(text);
+      return;
+    }
     setDraft("");
     stickToBottom.current = true;
     // While a turn is active this schedules the prompt; otherwise it starts now.
@@ -608,55 +576,9 @@ export function AgentPanel() {
         ) : null}
 
         <div className="agent-strip-actions">
-          <div
-            className="agent-engine-switch"
-            role="group"
-            aria-label="Agent engine"
-          >
-            <button
-              type="button"
-              className={engine === "pi" ? "is-active" : ""}
-              aria-pressed={engine === "pi"}
-              disabled={running}
-              onClick={() => setEngine("pi")}
-              title="Pi agent harness · pi-agent-core · Anthropic proxy (default)"
-            >
-              pi
-            </button>
-            <button
-              type="button"
-              className={engine === "claude" ? "is-active" : ""}
-              aria-pressed={engine === "claude"}
-              disabled={running}
-              onClick={() => setEngine("claude")}
-              title="Frontend Claude agent · Anthropic Messages proxy"
-            >
-              claude
-            </button>
-            <button
-              type="button"
-              className={engine === "deepseek" ? "is-active" : ""}
-              aria-pressed={engine === "deepseek"}
-              disabled={running}
-              onClick={() => setEngine("deepseek")}
-              title="Frontend loop · OpenAI-compatible DeepSeek proxy"
-            >
-              deepseek
-            </button>
-          </div>
-          <span
-            className="agent-model-chip"
-            title={proxyUrl || "No agent proxy configured"}
-          >
+          <span className="agent-model-chip" title="Pi harness model">
             {model || "no model"}
           </span>
-          <button
-            className="icon-button"
-            onClick={openSetup}
-            title="Agent settings"
-          >
-            <Settings2 size={12} />
-          </button>
           <button
             className="icon-button"
             onClick={confirmClear}
@@ -677,15 +599,10 @@ export function AgentPanel() {
               </div>
               <h3>Forge Agent</h3>
               <p>
-                I run in this tab with tools against your project, and the preview
-                hot-reloads as I work. My model calls go through the server's
-                JWT-authenticated{" "}
-                {engine === "claude"
-                  ? "Anthropic-style"
-                  : engine === "pi"
-                    ? "Pi harness"
-                    : "DeepSeek"}{" "}
-                proxy, so the API key stays server-side.
+                I run in this tab on the Pi harness with tools against your
+                project, and the preview hot-reloads as I work. My model calls
+                go through the server's JWT-authenticated transport, so the API
+                key stays server-side.
               </p>
               <div className="agent-suggestions">
                 {SUGGESTIONS.map((suggestion) => (
@@ -703,10 +620,7 @@ export function AgentPanel() {
               <div className="agent-welcome-meta">
                 <code>{provider}/{model}</code>
                 <span>·</span>
-                <span>
-                  {engine === "pi" ? "pi-agent-core · " : ""}tools: read · write
-                  · edit · list · shell · plan
-                </span>
+                <span>pi-agent-core · tools: read · write · edit · list · shell · plan</span>
               </div>
             </div>
           ) : (
@@ -714,14 +628,12 @@ export function AgentPanel() {
               <div className="agent-welcome-mark">
                 <Sparkles size={20} />
               </div>
-              <h3>Connect the DeepSeek proxy</h3>
+              <h3>Connect the Pi harness</h3>
               <p>
-                The browser agent calls a same-origin REST proxy with your Forge
-                JWT. The DeepSeek API key stays in the Nitro server environment.
+                The Pi harness runs in this tab and calls a same-origin JWT
+                route. The provider API key stays in the Nitro server
+                environment.
               </p>
-              <button className="solid-button small" onClick={openSetup}>
-                Proxy settings
-              </button>
               <div className="agent-welcome-meta">
                 {statusLoaded ? (
                   <>
@@ -873,7 +785,7 @@ export function AgentPanel() {
       <div className="agent-dock">
         <TodoPanel />
         {running ? (
-          <AgentLoader label={runStatusText ?? ""} engine={engine} />
+          <AgentLoader label={runStatusText ?? ""} />
         ) : null}
         <PromptQueue running={running} />
       </div>

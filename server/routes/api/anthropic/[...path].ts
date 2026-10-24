@@ -5,18 +5,18 @@ import {
   readBody,
   type H3Event,
 } from 'h3';
-import { CLAUDE_AGENT, CLAUDE_ANTHROPIC_UPSTREAM } from '../../../../shared/claude';
+import { PI_AGENT, PI_ANTHROPIC_UPSTREAM } from '../../../../shared/pi';
 import { authGuardAny } from '../../../utils/auth';
 
 /**
- * Anthropic-style proxy for the frontend Claude agent.
+ * Anthropic-style transport for the frontend Pi harness.
  *
- *   browser (Anthropic SDK + Forge JWT)
+ *   browser (pi-ai + Forge JWT)
  *     → POST /api/anthropic/v1/messages
  *       → https://api.deepseek.com/anthropic/v1/messages
  *
  * Only `x-api-key`/`Authorization` carrying a valid Forge JWT is accepted; the
- * real DeepSeek credential is inserted here and never reaches the browser.
+ * real provider credential is inserted here and never reaches the browser.
  * The upstream URL is fixed by configuration, so callers cannot repoint it.
  */
 
@@ -37,7 +37,7 @@ function isLocalHostname(hostname: string): boolean {
 }
 
 function upstreamBaseUrl(): string {
-  const raw = (process.env.DEEPSEEK_ANTHROPIC_BASE_URL ?? CLAUDE_ANTHROPIC_UPSTREAM).trim();
+  const raw = (process.env.DEEPSEEK_ANTHROPIC_BASE_URL ?? PI_ANTHROPIC_UPSTREAM).trim();
 
   let url: URL;
   try {
@@ -148,7 +148,7 @@ function validateBody(
     model:
       typeof request.model === 'string' && request.model.trim()
         ? request.model.trim()
-        : CLAUDE_AGENT.model,
+        : PI_AGENT.model,
   };
 }
 
@@ -200,7 +200,7 @@ export default defineEventHandler(async (event) => {
     accept: getHeader(event, 'accept') ?? 'text/event-stream',
     'anthropic-version': getHeader(event, 'anthropic-version') ?? '2023-06-01',
     'x-api-key': key,
-    'user-agent': 'forge-sandbox-ide/anthropic-proxy',
+    'user-agent': 'forge-sandbox-ide/pi-transport',
   };
   const beta = getHeader(event, 'anthropic-beta');
   if (beta) headers['anthropic-beta'] = beta;
@@ -220,7 +220,7 @@ export default defineEventHandler(async (event) => {
   } catch (error) {
     const aborted = controller.signal.aborted;
     console.warn(
-      `[anthropic-proxy] upstream ${aborted ? 'timed out' : 'failed'}:`,
+      `[pi-transport] upstream ${aborted ? 'timed out' : 'failed'}:`,
       error instanceof Error ? error.message : String(error)
     );
     throw createError({
@@ -238,7 +238,7 @@ export default defineEventHandler(async (event) => {
     headers: {
       'content-type': contentType,
       'cache-control': 'no-store',
-      'x-forge-proxy': 'deepseek-anthropic-jwt',
+      'x-forge-proxy': 'pi-anthropic-jwt',
     },
   });
 });

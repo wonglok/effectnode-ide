@@ -41,7 +41,6 @@ import type {
   AgentTodoItem,
 } from "../../shared/types";
 import { PI_AGENT } from "../../shared/pi";
-import { CLAUDE_AGENT } from "./claude-config";
 import { authHeaders } from "./auth-token";
 import {
   AGENT_TOOLS,
@@ -86,8 +85,8 @@ function model(): Model<"anthropic-messages"> {
     baseUrl: `${origin}${PI_AGENT.baseUrl}`,
     input: ["text"],
     reasoning: true,
-    contextWindow: CLAUDE_AGENT.maxContextTokens,
-    maxTokens: CLAUDE_AGENT.maxTokens,
+    contextWindow: PI_AGENT.maxContextTokens,
+    maxTokens: PI_AGENT.maxTokens,
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
   };
 }
@@ -101,7 +100,7 @@ const streamFn: StreamFn = (selectedModel, context, options) => {
   const headers = {
     ...options?.headers,
     ...authHeaders(),
-    "anthropic-version": CLAUDE_AGENT.apiVersion,
+    "anthropic-version": PI_AGENT.apiVersion,
   };
   return streamSimple(
     selectedModel as Model<"anthropic-messages">,

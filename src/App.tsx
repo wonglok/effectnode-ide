@@ -13,7 +13,6 @@ import { TerminalPane } from '@/components/TerminalPane';
 import { TitleBar } from '@/components/TitleBar';
 import { Toasts } from '@/components/Toasts';
 import { AgentPanel } from '@/components/agent/AgentPanel';
-import { AgentSetupDialog } from '@/components/agent/AgentSetupDialog';
 import { bootstrap } from '@/lib/bootstrap';
 import { useAgentStore } from '@/store/agent';
 import { useProjectStore } from '@/store/projects';
@@ -184,7 +183,6 @@ export default function App() {
       <PromptDialog />
       <ConfirmDialog />
       <ShortcutsDialog />
-      <AgentSetupDialog />
       <Toasts />
     </div>
   );

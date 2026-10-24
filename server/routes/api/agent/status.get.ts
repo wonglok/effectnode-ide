@@ -1,5 +1,4 @@
 import { defineEventHandler } from 'h3';
-import { CLAUDE_AGENT, CLAUDE_ANTHROPIC_UPSTREAM } from '../../../../shared/claude';
 import { PI_AGENT } from '../../../../shared/pi';
 import type { AgentStatusResponse } from '../../../../shared/types';
 import { authGuard } from '../../../utils/auth';
@@ -24,43 +23,14 @@ export default defineEventHandler(async (event) => {
   if (denied) return denied;
 
   const { key, keySource } = credential();
-  const model =
-    process.env.DEEPSEEK_MODEL?.trim() ||
-    process.env.AGENT_MODEL?.trim() ||
-    'deepseek-flash';
 
   return {
     configured: Boolean(key),
-    provider: 'deepseek',
-    model,
-    proxyUrl: '/api/deepseek/chat/completions',
+    provider: PI_AGENT.provider,
+    api: PI_AGENT.api,
+    harness: PI_AGENT.harness,
+    model: PI_AGENT.model,
+    thinkingLevel: PI_AGENT.thinkingLevel,
     keySource,
-    defaultBaseUrl: '/api/deepseek/chat/completions',
-    defaultModel: model,
-    claude: {
-      // The Anthropic proxy deliberately does not use the OpenAI fallback.
-      configured: Boolean(
-        process.env.DEEPSEEK_API_KEY?.trim() ||
-          process.env.AGENT_API_KEY?.trim()
-      ),
-      model: CLAUDE_AGENT.model,
-      proxyUrl: CLAUDE_AGENT.proxyUrl,
-      upstreamBaseUrl:
-        process.env.DEEPSEEK_ANTHROPIC_BASE_URL?.trim() ||
-        CLAUDE_ANTHROPIC_UPSTREAM,
-      effort: CLAUDE_AGENT.effort,
-    },
-    pi: {
-      configured: Boolean(
-        process.env.DEEPSEEK_API_KEY?.trim() ||
-          process.env.AGENT_API_KEY?.trim()
-      ),
-      provider: PI_AGENT.provider,
-      api: PI_AGENT.api,
-      harness: PI_AGENT.harness,
-      model: PI_AGENT.model,
-      thinkingLevel: PI_AGENT.thinkingLevel,
-      proxyUrl: PI_AGENT.proxyUrl,
-    },
-  };
+  } satisfies AgentStatusResponse;
 });

@@ -2135,45 +2135,6 @@ code {
   margin-right: 3px;
 }
 
-.agent-engine-switch {
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  margin-right: 4px;
-  padding: 1px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.02);
-}
-
-.agent-engine-switch button {
-  padding: 2px 6px;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  font-family: var(--font-mono);
-  font-size: 8px;
-  letter-spacing: 0.02em;
-  text-transform: lowercase;
-  color: var(--faint);
-  cursor: pointer;
-  transition: color 120ms ease, background 120ms ease;
-}
-
-.agent-engine-switch button:hover:not(:disabled) {
-  color: var(--text);
-}
-
-.agent-engine-switch button.is-active {
-  background: var(--accent-wash);
-  color: var(--accent);
-}
-
-.agent-engine-switch button:disabled {
-  cursor: default;
-  opacity: 0.65;
-}
-
 .agent-strip .agent-undo {
   flex: 0 0 auto;
 }
@@ -3741,7 +3702,7 @@ code {
   white-space: pre;
 }
 
-/* ── Agent setup dialog ────────────────────────────────────── */
+/* ── Dialog form fields ────────────────────────────────────── */
 
 .agent-presets {
   display: flex;
@@ -3775,12 +3736,6 @@ code {
   background: var(--accent-wash);
 }
 
-.agent-form {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
 .field-label {
   display: flex;
   align-items: center;
@@ -3810,70 +3765,6 @@ code {
   flex: 1;
   min-width: 0;
 }
-
-.agent-server-key,
-.agent-form-warning {
-  display: flex;
-  align-items: flex-start;
-  gap: 7px;
-  margin-top: 12px;
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--bg-elevated);
-  color: var(--muted);
-  font-size: 10.5px;
-  line-height: 1.55;
-}
-
-.agent-server-key svg,
-.agent-form-warning svg {
-  flex: 0 0 auto;
-  margin-top: 2px;
-}
-
-.agent-form-warning {
-  border-color: rgba(255, 193, 92, 0.22);
-  background: rgba(255, 193, 92, 0.05);
-  color: #cfa35a;
-}
-
-.agent-setting-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 7px 0;
-  border-bottom: 1px solid var(--line);
-}
-
-.agent-setting-row:last-child {
-  border-bottom: 0;
-}
-
-.agent-setting-label {
-  color: var(--muted);
-  font-size: 10.5px;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.agent-setting-value {
-  color: var(--text);
-  font-size: 11px;
-  text-align: right;
-  word-break: break-word;
-}
-
-.agent-privacy {
-  margin: 14px 0 0;
-  padding-top: 11px;
-  border-top: 1px solid var(--line);
-  color: var(--faint);
-  font-size: 10px;
-  line-height: 1.6;
-}
-
 
 /* ── Responsive ────────────────────────────────────────────── */
 

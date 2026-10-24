@@ -41,53 +41,14 @@ export interface AgentToolDefinition {
   };
 }
 
-export interface ClaudeAgentStatus {
-  configured: boolean;
-  model: string;
-  /** Anthropic-style endpoint the frontend agent calls with its Forge JWT. */
-  proxyUrl: string;
-  /** Upstream Anthropic-compatible base URL (server-side only). */
-  upstreamBaseUrl: string;
-  effort: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
-}
-
-export interface PiAgentStatus {
+export interface AgentStatusResponse {
   configured: boolean;
   provider: 'pi';
   api: 'anthropic-messages';
   harness: 'pi-agent-core';
   model: string;
   thinkingLevel: string;
-  /** Anthropic-style endpoint the browser harness calls with its Forge JWT. */
-  proxyUrl: string;
-}
-
-export interface AgentStatusResponse {
-  configured: boolean;
-  provider: string;
-  model: string;
-  /** Same-origin REST proxy the browser agent calls with its Forge JWT. */
-  proxyUrl: string;
   keySource: 'DEEPSEEK_API_KEY' | 'AGENT_API_KEY' | null;
-  /** Legacy aliases kept for older clients. */
-  defaultBaseUrl: string;
-  defaultModel: string;
-  /** Frontend Claude agent (Anthropic Messages API via the JWT proxy). */
-  claude: ClaudeAgentStatus;
-  /** Frontend Pi harness (pi-agent-core + pi-ai via the JWT proxy). */
-  pi: PiAgentStatus;
-}
-
-export type AgentEngine = 'claude' | 'deepseek' | 'pi';
-
-/** Body accepted by POST /api/deepseek/chat/completions. */
-export interface DeepSeekChatRequest {
-  messages: AgentChatMessage[];
-  tools?: AgentToolDefinition[];
-  tool_choice?: 'auto' | 'none' | 'required';
-  model?: string;
-  temperature?: number;
-  stream?: boolean;
 }
 
 /* ── Frontend agent plan ────────────────────────────────────── */
