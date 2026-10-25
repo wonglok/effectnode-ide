@@ -63,9 +63,10 @@ and external coding agents should follow these rules when changing the project.
 - `src/sections/force-shield/` — chapter 2 TSL force-field scene.
 - `src/sections/kinetic/` — chapter 3 scene, glass title, and bundled font.
 - `src/sections/apartment/` — chapter 4 interior camera in the studio-lit apartment GLB.
-- `public/studio.hdr`, `public/apartment.glb` — chapter 4 binaries served from
-  the public root. Request them with relative URLs (`studio.hdr`,
-  `apartment.glb`) so they also resolve under the IDE preview's URL prefix.
+- `public/studio.hdr`, `public/apartment.glb` — chapter 4 binaries, visible in
+  the explorer as read-only files and served from the public root. Request them
+  with relative URLs (`studio.hdr`, `apartment.glb`) so they also resolve under
+  the IDE preview's URL prefix.
 - `src/sections/live-env/` — chapter 5 scene.
 - `src/sections/alpha6/` — chapter 6 scene.
 - `src/sections/shared.ts` — shared chapter types and TSL scene helpers.

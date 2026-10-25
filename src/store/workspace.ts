@@ -89,16 +89,15 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   refresh: () => {
     const vfs = runtime.getVfs();
     if (!vfs) return;
-    set({ tree: buildFileTree(vfs, (path) => runtime.isServedAsset(path)) });
+    set({ tree: buildFileTree(vfs) });
   },
 
   loadFiles: (files, entry) => {
     for (const key of [...writeTimers.keys()]) cancelWrite(key);
 
     const vfs = runtime.getVfs();
-    const tree = vfs
-      ? buildFileTree(vfs, (path) => runtime.isServedAsset(path))
-      : [];
+    // The explorer mirrors the whole VFS, including the public binaries.
+    const tree = vfs ? buildFileTree(vfs) : [];
     const expanded: Record<string, boolean> = {};
     for (const dir of allDirectories(tree)) expanded[dir] = true;
 
@@ -125,6 +124,10 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
   openFile: (rawPath) => {
     const path = normalizePath(rawPath);
     if (runtime.isDirectory(path)) return;
+    if (runtime.isBinaryAsset(path)) {
+      useUiStore.getState().toast(`${path.split('/').pop()} is a binary asset`, 'info');
+      return;
+    }
 
     const state = get();
     const expanded = { ...state.expanded };
@@ -157,6 +160,7 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
 
   setActiveFile: (path) => {
     if (!runtime.exists(path) || runtime.isDirectory(path)) return;
+    if (runtime.isBinaryAsset(path)) return;
     const state = get();
     const content = state.buffers[path] ?? runtime.readFile(path) ?? '';
     set({
@@ -317,8 +321,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       runtime.requestPreviewReload();
       return true;
     } catch (error) {
-      useUiStore.getState().toast('Rename failed', 'error');
-      runtime.log('error', error instanceof Error ? error.message : String(error));
+      const message = error instanceof Error ? error.message : 'Rename failed';
+      useUiStore.getState().toast(message, 'error');
+      runtime.log('error', message);
       return false;
     }
   },
@@ -351,8 +356,9 @@ export const useWorkspaceStore = create<WorkspaceState>((set, get) => ({
       runtime.requestPreviewReload();
       return true;
     } catch (error) {
-      useUiStore.getState().toast('Delete failed', 'error');
-      runtime.log('error', error instanceof Error ? error.message : String(error));
+      const message = error instanceof Error ? error.message : 'Delete failed';
+      useUiStore.getState().toast(message, 'error');
+      runtime.log('error', message);
       return false;
     }
   },

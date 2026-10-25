@@ -95,6 +95,8 @@ plain CSS and as `--color-primary` in Tailwind (`bg-primary`, `text-primary`,
 
 ## Editing
 
+- `public/` holds the chapter 4 binaries. They appear in the explorer but are
+  read-only (the preview fetches them as bytes).
 - Change the chapter accents and surface colours in `src/sections/registry.ts`.
 - Change a scene's drawing code in its folder under `src/sections/<scene>/`.
 - Change the chrome styling in `src/components/landing.css`.

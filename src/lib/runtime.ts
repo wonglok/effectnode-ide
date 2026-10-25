@@ -56,8 +56,13 @@ export class IdeRuntime {
   private logSequence = 0;
   private previewUrlValue = '';
   private fileSink: FileSink | null = null;
-  /** Binary public assets served to the project but hidden from its file map. */
-  private servedAssetPaths = new Set<string>();
+  /**
+   * Binary public assets. They are visible in the explorer but stay out of the
+   * text file map (snapshots, OPFS mirror, agent reads) because they are bytes.
+   */
+  private binaryAssetPaths = new Set<string>();
+  /** Root URL → `public/` path, matching Vite's publicDir semantics. */
+  private assetAliases = new Map<string, string>();
 
   /** Attach the durable project store (OPFS) or detach it with `null`. */
   setFileSink(sink: FileSink | null): void {
@@ -101,9 +106,18 @@ export class IdeRuntime {
     return Object.keys(this.snapshot()).length;
   }
 
-  /** True for binary starter assets that should not appear in the file map. */
-  isServedAsset(path: string): boolean {
-    return this.servedAssetPaths.has(path);
+  /** True for binary public assets that cannot be read as text. */
+  isBinaryAsset(path: string): boolean {
+    return this.binaryAssetPaths.has(path);
+  }
+
+  /** True when `path` is, or contains, a binary public asset. */
+  containsBinaryAsset(path: string): boolean {
+    const prefix = path === '/' ? '/' : path + '/';
+    for (const asset of this.binaryAssetPaths) {
+      if (asset === path || asset.startsWith(prefix)) return true;
+    }
+    return false;
   }
 
   async boot(
@@ -163,13 +177,18 @@ export class IdeRuntime {
       if (parent !== '/') vfs.mkdirSync(parent, { recursive: true });
       vfs.writeFileSync(path, content);
     }
-    // Public binaries are served by the virtual dev server but kept out of the
-    // editable file map, exports, and the agent's view of the project.
-    this.servedAssetPaths = new Set(Object.keys(assets));
+    // Public binaries are real files in the project tree, but they are bytes:
+    // keep them out of the text file map and expose them at the root URL as a
+    // Vite public directory would.
+    this.binaryAssetPaths = new Set(Object.keys(assets));
+    this.assetAliases = new Map();
     for (const [path, data] of Object.entries(assets)) {
       const parent = dirname(path);
       if (parent !== '/') vfs.mkdirSync(parent, { recursive: true });
       vfs.writeFileSync(path, data);
+      if (path.startsWith('/public/')) {
+        this.assetAliases.set(path.slice('/public'.length), path);
+      }
     }
     this.vfs = vfs;
   }
@@ -184,6 +203,16 @@ export class IdeRuntime {
       root: '/',
       jsx: true,
     });
+
+    // Vite serves files in `public/` from the site root. The virtual server
+    // serves exact paths, so rewrite those root URLs before dispatching.
+    const serveRequest = server.handleRequest.bind(server);
+    server.handleRequest = (method, url, headers, body) => {
+      const [pathname, query] = url.split('?');
+      const alias = this.assetAliases.get(pathname);
+      const target = alias ? alias + (query ? `?${query}` : '') : url;
+      return serveRequest(method, target, headers, body);
+    };
 
     server.on('hmr-update', (payload: unknown) => {
       const update = payload as { type?: 'update' | 'full-reload'; path?: string };
@@ -280,7 +309,7 @@ export class IdeRuntime {
   }
 
   readFile(path: string): string | null {
-    if (this.servedAssetPaths.has(path)) return null;
+    if (this.binaryAssetPaths.has(path)) return null;
     try {
       return this.requireVfs().readFileSync(path, 'utf8');
     } catch {
@@ -289,6 +318,9 @@ export class IdeRuntime {
   }
 
   writeFile(path: string, content: string): void {
+    if (this.binaryAssetPaths.has(path)) {
+      throw new Error(`${path} is a read-only binary asset`);
+    }
     this.requireVfs().writeFileSync(path, content);
     this.fileSink?.write(path, content);
   }
@@ -316,7 +348,9 @@ export class IdeRuntime {
         .filter(
           (name) =>
             !IGNORED.has(name) &&
-            !this.servedAssetPaths.has(joinPath(path, name))
+            // Shell and agent listings stay text-only; the explorer builds its
+            // own tree and shows the public binaries.
+            !this.binaryAssetPaths.has(joinPath(path, name))
         );
     } catch {
       return [];
@@ -336,6 +370,9 @@ export class IdeRuntime {
   }
 
   renameEntry(from: string, to: string): void {
+    if (this.containsBinaryAsset(from)) {
+      throw new Error('Starter binary assets are read-only');
+    }
     const parent = dirname(to);
     if (parent !== '/') this.requireVfs().mkdirSync(parent, { recursive: true });
     this.requireVfs().renameSync(from, to);
@@ -344,6 +381,9 @@ export class IdeRuntime {
 
   deleteEntry(path: string): void {
     if (path === '/') throw new Error('Refusing to delete the project root');
+    if (this.containsBinaryAsset(path)) {
+      throw new Error('Starter binary assets are read-only');
+    }
     this.deleteEntryInternal(path);
     this.fileSink?.delete(path);
   }
@@ -376,7 +416,7 @@ export class IdeRuntime {
       for (const name of entries) {
         if (IGNORED.has(name)) continue;
         const path = joinPath(dir, name);
-        if (this.servedAssetPaths.has(path)) continue;
+        if (this.binaryAssetPaths.has(path)) continue;
         try {
           const stats = this.vfs!.statSync(path);
           if (stats.isDirectory()) visit(path);

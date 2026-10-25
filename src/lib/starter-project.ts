@@ -6,8 +6,9 @@
  *
  * Binary public assets (the chapter 4 HDRI and GLB) are kept out of that text
  * map. They live in `starter-files/public` and are fetched as bytes when a
- * project needs them, then mounted into the virtual file system at the root so
- * the in-browser dev server serves them like Vite's public directory.
+ * project needs them, then mounted at `public/` in the virtual file system.
+ * The explorer shows that folder; the runtime also serves the files from the
+ * site root, matching Vite's public-directory behaviour.
  *
  * The starter is a six-chapter, scroll-driven landing page for MY COMPANY:
  * a Zustand scroll store, a chapter timeline, and one canvas that draws every
@@ -94,12 +95,14 @@ export const STARTER_FILES: Record<string, string> = {
 export const STARTER_ENTRY = '/src/components/Landing.tsx';
 
 /**
- * Binary public assets, keyed by the path the starter fetches them from.
+ * Binary public assets, keyed by their path inside the project. They live in
+ * `public/` like a normal Vite project (and show up in the explorer), while
+ * the virtual server also serves them from the root URL the starter requests.
  * Vite gives us the URL for the file in both dev and the production build.
  */
 export const STARTER_ASSETS: Record<string, string> = {
-  '/apartment.glb': apartmentGlbUrl,
-  '/studio.hdr': studioHdrUrl,
+  '/public/apartment.glb': apartmentGlbUrl,
+  '/public/studio.hdr': studioHdrUrl,
 };
 
 /** A project only needs the starter binaries when chapter 4 is present. */
