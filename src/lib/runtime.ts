@@ -172,23 +172,23 @@ export class IdeRuntime {
   ): void {
     if (!this.lib) throw new Error('almostnode is not loaded');
     const vfs = new this.lib.VirtualFS();
+    this.binaryAssetPaths = new Set(Object.keys(assets));
+    this.assetAliases = new Map();
     for (const [path, content] of Object.entries(files)) {
       const parent = dirname(path);
       if (parent !== '/') vfs.mkdirSync(parent, { recursive: true });
       vfs.writeFileSync(path, content);
+      // Vite serves everything under public/ at the site root, text included.
+      this.registerPublicAlias(path);
     }
     // Public binaries are real files in the project tree, but they are bytes:
     // keep them out of the text file map and expose them at the root URL as a
     // Vite public directory would.
-    this.binaryAssetPaths = new Set(Object.keys(assets));
-    this.assetAliases = new Map();
     for (const [path, data] of Object.entries(assets)) {
       const parent = dirname(path);
       if (parent !== '/') vfs.mkdirSync(parent, { recursive: true });
       vfs.writeFileSync(path, data);
-      if (path.startsWith('/public/')) {
-        this.assetAliases.set(path.slice('/public'.length), path);
-      }
+      this.registerPublicAlias(path);
     }
     this.vfs = vfs;
   }
@@ -322,7 +322,38 @@ export class IdeRuntime {
       throw new Error(`${path} is a read-only binary asset`);
     }
     this.requireVfs().writeFileSync(path, content);
+    this.registerPublicAlias(path);
     this.fileSink?.write(path, content);
+  }
+
+  /** Write a binary file (e.g. an uploaded public asset) into the VFS. */
+  writeAsset(path: string, data: Uint8Array): void {
+    const vfs = this.requireVfs();
+    const parent = dirname(path);
+    if (parent !== '/') vfs.mkdirSync(parent, { recursive: true });
+    vfs.writeFileSync(path, data);
+    this.binaryAssetPaths.add(path);
+    this.registerPublicAlias(path);
+  }
+
+  /** Remove a binary asset that was added at runtime. */
+  deleteAsset(path: string): void {
+    if (!this.binaryAssetPaths.has(path)) return;
+    try {
+      this.requireVfs().unlinkSync(path);
+    } catch {
+      // Already gone.
+    }
+    this.binaryAssetPaths.delete(path);
+    if (path.startsWith('/public/')) {
+      this.assetAliases.delete(path.slice('/public'.length));
+    }
+  }
+
+  private registerPublicAlias(path: string): void {
+    if (path.startsWith('/public/')) {
+      this.assetAliases.set(path.slice('/public'.length), path);
+    }
   }
 
   exists(path: string): boolean {
@@ -366,6 +397,7 @@ export class IdeRuntime {
     const parent = dirname(path);
     if (parent !== '/') this.requireVfs().mkdirSync(parent, { recursive: true });
     this.requireVfs().writeFileSync(path, content);
+    this.registerPublicAlias(path);
     this.fileSink?.write(path, content);
   }
 

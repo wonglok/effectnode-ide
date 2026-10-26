@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type ReactNode,
+} from "react";
 import {
   ArrowUp,
   Brain,
@@ -11,6 +17,7 @@ import {
   ListChecks,
   ListPlus,
   Loader2,
+  Paperclip,
   Pencil,
   Play,
   RefreshCw,
@@ -22,12 +29,15 @@ import {
   Undo2,
   X,
 } from "lucide-react";
+import { getBoundProjectId, opfsProjectStore } from "@/lib/opfs";
+import { runtime } from "@/lib/runtime";
 import {
   selectAgentConfigured,
   useAgentStore,
   type AgentEmptyResponseRetry,
   type AgentToolEvent,
 } from "@/store/agent";
+import { useProjectStore } from "@/store/projects";
 import { useRuntimeStore } from "@/store/runtime";
 import { useUiStore } from "@/store/ui";
 import { useWorkspaceStore } from "@/store/workspace";
@@ -38,6 +48,78 @@ const SUGGESTIONS = [
   "Add a new transition visaul effect for the last scene: like a new water ripple , keep aspect ratio of water droplet",
   'Please update the "MY COMPANY" branding placeholder to my own brand:',
 ];
+
+const ATTACHMENTS_DIR = "/public/attachments";
+const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024;
+const MAX_ATTACHMENTS = 10;
+
+interface AttachmentDraft {
+  id: string;
+  name: string;
+  path: string;
+  size: number;
+  type: string;
+  kind: "text" | "binary";
+  status: "uploading" | "ready" | "error";
+  error?: string;
+}
+
+function attachmentId(): string {
+  return `att-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} kB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function safeFileName(name: string): string {
+  const cleaned = name
+    .normalize("NFKD")
+    .replace(/[^\w.-]+/g, "-")
+    .replace(/^[-.]+|[-.]+$/g, "")
+    .slice(0, 90);
+  return cleaned || "file";
+}
+
+/** Avoid overwriting existing project files by suffixing the name. */
+function uniquePublicPath(fileName: string): string {
+  const base = `${ATTACHMENTS_DIR}/${fileName}`;
+  if (!runtime.exists(base)) return base;
+  const dot = fileName.lastIndexOf(".");
+  const stem = dot > 0 ? fileName.slice(0, dot) : fileName;
+  const extension = dot > 0 ? fileName.slice(dot) : "";
+  for (let index = 1; index < 1000; index += 1) {
+    const candidate = `${ATTACHMENTS_DIR}/${stem}-${index}${extension}`;
+    if (!runtime.exists(candidate)) return candidate;
+  }
+  return `${ATTACHMENTS_DIR}/${stem}-${Date.now()}${extension}`;
+}
+
+/**
+ * Text files stay editable project files; anything that is not valid UTF-8 is
+ * stored as a binary public asset beside the project in OPFS.
+ */
+function decodeText(bytes: Uint8Array): string | null {
+  if (bytes.includes(0)) return null;
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch {
+    return null;
+  }
+}
+
+function attachmentNote(attachments: AttachmentDraft[]): string {
+  const lines = attachments.map((attachment) =>
+    attachment.kind === "text"
+      ? `- ${attachment.path} (${attachment.type}, ${formatBytes(attachment.size)}) — text file, readable with your tools`
+      : `- ${attachment.path} (${attachment.type}, ${formatBytes(attachment.size)}) — binary asset, use this path in code`
+  );
+  return `Attached files uploaded to the project's public folder:\n${lines.join(
+    "\n"
+  )}`;
+}
 
 function TypingDots() {
   return (
@@ -476,14 +558,153 @@ export function AgentPanel() {
   const keepGoing = useAgentStore((state) => state.keepGoing);
   const openConfirm = useUiStore((state) => state.openConfirm);
   const closeConfirm = useUiStore((state) => state.closeConfirm);
+  const toast = useUiStore((state) => state.toast);
+  const projectId = useProjectStore((state) => state.id);
 
   const [draft, setDraft] = useState("");
+  const [attachments, setAttachments] = useState<AttachmentDraft[]>([]);
+  const [uploadingFiles, setUploadingFiles] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const stickToBottom = useRef(true);
 
   const running = runStatus === "running";
+  const readyAttachments = attachments.filter(
+    (attachment) => attachment.status === "ready"
+  );
+  const uploadingAttachments = attachments.some(
+    (attachment) => attachment.status === "uploading"
+  );
+
+  // Attachments belong to the project that was open when they were uploaded.
+  useEffect(() => {
+    setAttachments([]);
+    setUploadingFiles(false);
+  }, [projectId]);
+
+  const patchAttachment = (id: string, patch: Partial<AttachmentDraft>) => {
+    setAttachments((list) =>
+      list.map((attachment) =>
+        attachment.id === id ? { ...attachment, ...patch } : attachment
+      )
+    );
+  };
+
+  const onPickFiles = async (event: ChangeEvent<HTMLInputElement>) => {
+    const picked = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    if (picked.length === 0) return;
+
+    const boundProjectId = getBoundProjectId();
+    if (!boundProjectId) {
+      toast("The project is still loading — try again in a moment.", "error");
+      return;
+    }
+
+    const room = MAX_ATTACHMENTS - attachments.length;
+    if (room <= 0) {
+      toast(`You can attach up to ${MAX_ATTACHMENTS} files.`, "error");
+      return;
+    }
+
+    setUploadingFiles(true);
+    let uploaded = 0;
+
+    try {
+      for (const file of picked.slice(0, room)) {
+        if (file.size > MAX_ATTACHMENT_BYTES) {
+          toast(
+            `${file.name} is larger than ${formatBytes(MAX_ATTACHMENT_BYTES)}.`,
+            "error"
+          );
+          continue;
+        }
+
+        const fileName = safeFileName(file.name);
+        const path = uniquePublicPath(fileName);
+        const id = attachmentId();
+        const type = file.type || "application/octet-stream";
+
+        setAttachments((list) => [
+          ...list,
+          {
+            id,
+            name: path.split("/").pop() ?? fileName,
+            path,
+            size: file.size,
+            type,
+            kind: "binary",
+            status: "uploading",
+          },
+        ]);
+
+        try {
+          const bytes = new Uint8Array(await file.arrayBuffer());
+          const text = decodeText(bytes);
+
+          if (text !== null) {
+            runtime.createFile(path, text);
+            patchAttachment(id, { kind: "text", status: "ready" });
+          } else {
+            runtime.writeAsset(path, bytes);
+            try {
+              await opfsProjectStore.writeUpload(boundProjectId, path, bytes);
+            } catch (error) {
+              runtime.deleteAsset(path);
+              throw error;
+            }
+            patchAttachment(id, { kind: "binary", status: "ready" });
+          }
+
+          uploaded += 1;
+        } catch (error) {
+          const message =
+            error instanceof Error ? error.message : String(error);
+          patchAttachment(id, { status: "error", error: message });
+          toast(`Could not attach ${file.name}: ${message}`, "error");
+        }
+      }
+    } finally {
+      setUploadingFiles(false);
+    }
+
+    if (uploaded > 0) {
+      useWorkspaceStore.getState().refresh();
+      runtime.requestPreviewReload();
+      runtime.log(
+        "info",
+        `Attached ${uploaded} file${uploaded === 1 ? "" : "s"} to ${ATTACHMENTS_DIR}`
+      );
+    }
+  };
+
+  const removeAttachment = async (attachment: AttachmentDraft) => {
+    setAttachments((list) => list.filter((item) => item.id !== attachment.id));
+    if (attachment.status !== "ready") return;
+
+    try {
+      if (attachment.kind === "text") {
+        runtime.deleteEntry(attachment.path);
+      } else {
+        runtime.deleteAsset(attachment.path);
+        const boundProjectId = getBoundProjectId();
+        if (boundProjectId) {
+          await opfsProjectStore.deleteUpload(boundProjectId, attachment.path);
+        }
+      }
+      useWorkspaceStore.getState().refresh();
+      runtime.requestPreviewReload();
+    } catch (error) {
+      toast(
+        `Could not remove ${attachment.name}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        "error"
+      );
+    }
+  };
 
   useEffect(() => {
     void init();
@@ -510,16 +731,25 @@ export function AgentPanel() {
 
   const submit = () => {
     const text = draft.trim();
-    if (!text) return;
+    if (uploadingAttachments) return;
+    if (!text && readyAttachments.length === 0) return;
+
+    const note =
+      readyAttachments.length > 0 ? attachmentNote(readyAttachments) : "";
+    const message = [text, note].filter(Boolean).join("\n\n");
+    if (!message) return;
+
     if (!configured) {
-      // The store adds a configuration notice; keep the draft for later.
-      void send(text);
+      // The store adds a configuration notice; keep the draft and files for a
+      // retry once a model is configured.
+      void send(message);
       return;
     }
     setDraft("");
+    setAttachments([]);
     stickToBottom.current = true;
     // While a turn is active this schedules the prompt; otherwise it starts now.
-    void send(text);
+    void send(message);
   };
 
   const confirmUndo = () => {
@@ -790,7 +1020,56 @@ export function AgentPanel() {
         <PromptQueue running={running} />
       </div>
 
+      {attachments.length > 0 ? (
+        <div className="agent-attachments">
+          {attachments.map((attachment) => (
+            <span
+              key={attachment.id}
+              className={`agent-attachment ${
+                attachment.status === "error" ? "has-error" : ""
+              }`}
+              title={attachment.error ?? attachment.path}
+            >
+              {attachment.status === "uploading" ? (
+                <Loader2 size={10} className="spin" />
+              ) : (
+                <FileText size={10} />
+              )}
+              <span className="agent-attachment-name">{attachment.name}</span>
+              <span className="agent-attachment-size">
+                {attachment.status === "uploading"
+                  ? "…"
+                  : formatBytes(attachment.size)}
+              </span>
+              <button
+                className="agent-attachment-remove"
+                onClick={() => void removeAttachment(attachment)}
+                title="Remove attachment"
+              >
+                <X size={10} />
+              </button>
+            </span>
+          ))}
+        </div>
+      ) : null}
+
       <div className={`agent-composer ${running ? "is-running" : ""}`}>
+        <button
+          className="agent-attach"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={uploadingFiles || attachments.length >= MAX_ATTACHMENTS}
+          title="Attach files to the project's public folder"
+        >
+          <Paperclip size={14} />
+        </button>
+        <input
+          ref={fileInputRef}
+          hidden
+          type="file"
+          multiple
+          onChange={onPickFiles}
+          aria-label="Attach files"
+        />
         <textarea
           ref={textareaRef}
           value={draft}
@@ -823,8 +1102,11 @@ export function AgentPanel() {
             <button
               className="agent-send agent-send-queue"
               onClick={submit}
-              disabled={!draft.trim()}
-              title="Queue prompt (Enter)"
+              disabled={
+                (!draft.trim() && readyAttachments.length === 0) ||
+                uploadingAttachments
+              }
+              title={uploadingAttachments ? "Uploading files…" : "Queue prompt (Enter)"}
             >
               <ListPlus size={14} />
             </button>
@@ -840,8 +1122,18 @@ export function AgentPanel() {
           <button
             className="agent-send"
             onClick={submit}
-            disabled={!draft.trim() && configured}
-            title={configured ? "Send (Enter)" : "Configure the agent"}
+            disabled={
+              ((!draft.trim() && readyAttachments.length === 0) ||
+                uploadingAttachments) &&
+              configured
+            }
+            title={
+              uploadingAttachments
+                ? "Uploading files…"
+                : configured
+                  ? "Send (Enter)"
+                  : "Configure the agent"
+            }
           >
             <ArrowUp size={14} />
           </button>

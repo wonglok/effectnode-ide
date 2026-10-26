@@ -14,6 +14,7 @@ import {
 } from "@/lib/agent-state";
 import { createPiSession } from "@/lib/pi-harness";
 import { getBoundProjectId } from "@/lib/opfs";
+import { loadProjectAssets } from "@/lib/project-assets";
 import {
   buildAgentSystemPrompt,
   describeToolCall,
@@ -869,7 +870,10 @@ export const useAgentStore = create<AgentState>((set, get) => {
       clearLimitCountdownTimer();
 
       try {
-        await runtime.replaceProject(snapshot);
+        await runtime.replaceProject(
+          snapshot,
+          await loadProjectAssets(snapshot, getBoundProjectId())
+        );
         useWorkspaceStore.getState().loadFiles(snapshot);
         set((current) => ({
           undoSnapshot: null,

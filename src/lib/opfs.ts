@@ -21,6 +21,7 @@ const META_DIR = '.forge';
 const META_FILE = 'project.json';
 const VERSIONS_DIR = 'versions';
 const VERSION_INDEX = 'index.json';
+const UPLOADS_DIR = 'uploads';
 /** Oldest snapshots beyond this are pruned when a new version is saved. */
 const MAX_VERSIONS = 40;
 
@@ -343,6 +344,73 @@ class OpfsProjectStore {
   }
 
   /**
+   * Binary public assets live beside the manifest rather than in the text
+   * working tree: `.forge/uploads/public/<name>`. `replaceAll` preserves
+   * `.forge`, so attachments survive project reloads and switches.
+   */
+  writeUpload(
+    projectId: string,
+    virtualPath: string,
+    data: Uint8Array
+  ): Promise<void> {
+    return this.run(async () => {
+      const segments = safeSegments(virtualPath);
+      if (!segments) return;
+      const project = await this.projectDir(projectId, true);
+      if (!project) throw new Error('Project storage is unavailable');
+      const metaDir = await project.getDirectoryHandle(META_DIR, { create: true });
+      const uploadsDir = await metaDir.getDirectoryHandle(UPLOADS_DIR, { create: true });
+      const name = segments.pop();
+      if (!name) return;
+      const parent = await ensureSubdir(uploadsDir, segments, true);
+      const file = await parent.getFileHandle(name, { create: true });
+      const writable = await file.createWritable();
+      // Copy into an ArrayBuffer-backed view; OPFS write types reject
+      // SharedArrayBuffer-backed views.
+      const copy = new Uint8Array(data.byteLength);
+      copy.set(data);
+      await writable.write(copy);
+      await writable.close();
+    });
+  }
+
+  deleteUpload(projectId: string, virtualPath: string): Promise<void> {
+    return this.run(async () => {
+      const segments = safeSegments(virtualPath);
+      if (!segments) return;
+      const project = await this.projectDir(projectId, false);
+      if (!project) return;
+      const name = segments.pop();
+      if (!name) return;
+      try {
+        const metaDir = await project.getDirectoryHandle(META_DIR, { create: false });
+        const uploadsDir = await metaDir.getDirectoryHandle(UPLOADS_DIR, { create: false });
+        const parent = await ensureSubdir(uploadsDir, segments, false);
+        await parent.removeEntry(name);
+      } catch {
+        // Already gone.
+      }
+    });
+  }
+
+  /** Read every binary upload as a `path → bytes` map. */
+  readUploads(projectId: string): Promise<Record<string, Uint8Array>> {
+    return this.run(async () => {
+      const uploads: Record<string, Uint8Array> = {};
+      const project = await this.projectDir(projectId, false);
+      if (!project) return uploads;
+      try {
+        const metaDir = await project.getDirectoryHandle(META_DIR, { create: false });
+        const uploadsDir = await metaDir.getDirectoryHandle(UPLOADS_DIR, { create: false });
+        await readBinaryTree(uploadsDir, '', uploads);
+      } catch {
+        // No uploads yet.
+      }
+      return uploads;
+    });
+  }
+
+  /**
    * Rewrite a whole project folder from a snapshot (used on open/new/undo).
    *
    * `agentState` is undefined to preserve the existing transcript, null to drop
@@ -477,6 +545,7 @@ class OpfsProjectStore {
     const source = await this.read(sourceId);
     if (!source || Object.keys(source.files).length === 0) return null;
     const agentState = await this.readAgentState(sourceId);
+    const uploads = await this.readUploads(sourceId);
     const now = new Date().toISOString();
     const meta = mintProject(name);
     await this.replaceAll(
@@ -485,6 +554,9 @@ class OpfsProjectStore {
       { name: meta.name, createdAt: now, updatedAt: now },
       agentState
     );
+    for (const [virtualPath, data] of Object.entries(uploads)) {
+      await this.writeUpload(meta.id, virtualPath, data);
+    }
     return { ...meta, createdAt: now, updatedAt: now };
   }
 
@@ -613,12 +685,16 @@ class OpfsProjectStore {
     const source = await this.read(fromId);
     if (!source) return;
     const agentState = await this.readAgentState(fromId);
+    const uploads = await this.readUploads(fromId);
     await this.replaceAll(
       toId,
       source.files,
       source.manifest ?? { name: 'saved project' },
       agentState
     );
+    for (const [virtualPath, data] of Object.entries(uploads)) {
+      await this.writeUpload(toId, virtualPath, data);
+    }
     await this.deleteProject(fromId);
   }
 
@@ -836,6 +912,27 @@ async function copyEntry(
     }
   } catch {
     // Source vanished mid-copy.
+  }
+}
+
+async function readBinaryTree(
+  directory: FileSystemDirectoryHandle,
+  prefix: string,
+  files: Record<string, Uint8Array>
+): Promise<void> {
+  for await (const [name, handle] of directory) {
+    const virtualPath = `${prefix}/${name}`;
+    if (handle.kind === 'file') {
+      try {
+        const file = handle as FileSystemFileHandle;
+        files[virtualPath] = new Uint8Array(await (await file.getFile()).arrayBuffer());
+      } catch {
+        // Skip unreadable entries.
+      }
+    } else {
+      const child = await directory.getDirectoryHandle(name, { create: false });
+      await readBinaryTree(child, virtualPath, files);
+    }
   }
 }
 

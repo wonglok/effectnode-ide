@@ -9,8 +9,8 @@ import {
   type ProjectCatalogEntry,
   type ProjectVersionMeta,
 } from '@/lib/opfs';
+import { loadProjectAssets } from '@/lib/project-assets';
 import { runtime } from '@/lib/runtime';
-import { loadStarterAssets, STARTER_ASSET_ENTRY } from '@/lib/starter-project';
 import { flushAgentStatePersistence, useAgentStore } from './agent';
 import { useProjectStore } from './projects';
 import { restartWithFiles } from './runtime';
@@ -19,17 +19,6 @@ import { useWorkspaceStore } from './workspace';
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-async function assetsFor(
-  files: Record<string, string>
-): Promise<Record<string, Uint8Array>> {
-  if (files[STARTER_ASSET_ENTRY] === undefined) return {};
-  try {
-    return await loadStarterAssets();
-  } catch {
-    return {};
-  }
 }
 
 interface LibraryState {
@@ -257,7 +246,10 @@ export const useProjectLibraryStore = create<LibraryState>((set, get) => ({
         serializeAgentState(useAgentStore.getState())
       );
 
-      await restartWithFiles(version.files, await assetsFor(version.files));
+      await restartWithFiles(
+        version.files,
+        await loadProjectAssets(version.files, projectId)
+      );
       useWorkspaceStore.getState().loadFiles(version.files);
 
       if (version.agentState) {

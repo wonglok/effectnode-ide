@@ -10,13 +10,9 @@ import {
   writeLocalProject,
   type OpfsProject,
 } from '@/lib/opfs';
+import { loadProjectAssets } from '@/lib/project-assets';
 import { runtime } from '@/lib/runtime';
-import {
-  loadStarterAssets,
-  STARTER_ASSET_ENTRY,
-  STARTER_FILES,
-  STARTER_PROJECT_NAME,
-} from '@/lib/starter-project';
+import { STARTER_FILES, STARTER_PROJECT_NAME } from '@/lib/starter-project';
 import {
   flushAgentStatePersistence,
   pauseAgentStatePersistence,
@@ -29,23 +25,6 @@ import { useWorkspaceStore } from './workspace';
 
 /** Last active OPFS project id, kept under the historical key for reloads. */
 export const CURRENT_PROJECT_KEY = 'forge.currentProject';
-
-async function starterAssetsFor(
-  files: Record<string, string>
-): Promise<Record<string, Uint8Array>> {
-  if (files[STARTER_ASSET_ENTRY] === undefined) return {};
-  try {
-    return await loadStarterAssets();
-  } catch (error) {
-    runtime.log(
-      'warn',
-      `Could not load binary starter assets: ${
-        error instanceof Error ? error.message : String(error)
-      }`
-    );
-    return {};
-  }
-}
 
 export interface ProjectMetaState {
   id: string | null;
@@ -139,7 +118,7 @@ export const useProjectStore = create<ProjectState>((set) => ({
     try {
       // replaceProject mirrors the loaded files back into this project's folder,
       // preserving `.forge` (manifest and version history).
-      await restartWithFiles(files, await starterAssetsFor(files));
+      await restartWithFiles(files, await loadProjectAssets(files, id));
       useWorkspaceStore.getState().loadFiles(files);
       set({ ...meta });
       await useAgentStore.getState().loadPersisted();
@@ -163,7 +142,7 @@ export const useProjectStore = create<ProjectState>((set) => ({
     // replaceProject mirrors the starter files into the new OPFS folder.
     await restartWithFiles(
       STARTER_FILES,
-      await starterAssetsFor(STARTER_FILES)
+      await loadProjectAssets(STARTER_FILES, local.id)
     );
     useWorkspaceStore.getState().loadFiles(STARTER_FILES);
     set({
@@ -185,7 +164,7 @@ export const useProjectStore = create<ProjectState>((set) => ({
     const local = createLocalProject(projectName);
     localStorage.setItem(CURRENT_PROJECT_KEY, local.id);
     bindOpfsProject(local.id, local.name);
-    await restartWithFiles(files, await starterAssetsFor(files));
+    await restartWithFiles(files, await loadProjectAssets(files, local.id));
     useWorkspaceStore.getState().loadFiles(files);
     set({
       id: local.id,

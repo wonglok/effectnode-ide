@@ -3932,6 +3932,89 @@ code {
   cursor: default;
 }
 
+.agent-attachments {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  width: calc(100% - 40px);
+  max-width: 820px;
+  margin: 0 auto 6px;
+  padding: 0 1px;
+}
+
+.agent-attachment {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 230px;
+  padding: 4px 6px 4px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  line-height: 1.2;
+}
+
+.agent-attachment.has-error {
+  border-color: rgba(255, 115, 105, 0.4);
+  color: var(--red);
+}
+
+.agent-attachment-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-attachment-size {
+  flex: 0 0 auto;
+  color: var(--faint);
+}
+
+.agent-attachment.has-error .agent-attachment-size {
+  color: var(--red);
+  opacity: 0.75;
+}
+
+.agent-attachment-remove {
+  flex: 0 0 15px;
+  width: 15px;
+  height: 15px;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  color: var(--dim);
+}
+
+.agent-attachment-remove:hover {
+  color: var(--red);
+  background: rgba(255, 115, 105, 0.1);
+}
+
+.agent-attach {
+  flex: 0 0 27px;
+  width: 27px;
+  height: 27px;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+  color: var(--muted);
+  transition: color 120ms ease, background 120ms ease;
+}
+
+.agent-attach:hover {
+  color: var(--accent);
+  background: var(--panel-2);
+}
+
+.agent-attach:disabled {
+  opacity: 0.35;
+}
+
 .agent-composer {
   flex: 0 0 auto;
   display: flex;
