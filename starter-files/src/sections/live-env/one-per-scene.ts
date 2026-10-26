@@ -159,7 +159,11 @@ export function createOnePerScene(accent: string) {
       // The screen simply stays dark; the chapter still renders.
     });
 
-  const update = (time: number, pointer: Pointer, phase?: SectionPhaseState) => {
+  const update = (
+    time: number,
+    pointer: Pointer,
+    phase?: SectionPhaseState,
+  ) => {
     const leaving = phase?.phase === "exit" ? phase.progress : 0;
     const arriving = phase?.phase === "enter" ? 1 - phase.progress : 0;
 
