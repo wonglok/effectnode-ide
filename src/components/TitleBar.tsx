@@ -58,16 +58,22 @@ export function TitleBar() {
 
     try {
       const archive = await readProjectArchive(file);
-      const fileCount = Object.keys(archive.files).length;
+      const assetCount = Object.keys(archive.assets).length;
+      const fileCount = Object.keys(archive.files).length + assetCount;
       openConfirm({
         title: `Import “${archive.name}”?`,
-        message: `This replaces the current virtual files with ${fileCount} files from the ZIP (archive v${archive.manifest.version}). The archived agent chat is restored too. Download first if you want to keep them.`,
+        message: `This replaces the current virtual files with ${fileCount} files${
+          assetCount > 0
+            ? ` (including ${assetCount} public asset${assetCount === 1 ? '' : 's'})`
+            : ''
+        } from the ZIP (archive v${archive.manifest.version}). The archived agent chat is restored too. Download first if you want to keep them.`,
         confirmLabel: 'Import project',
         onConfirm: () => {
           closeConfirm();
           void importProject(
             archive.name,
             archive.files,
+            archive.assets,
             archive.agentStateRaw
           ).then(() => {
             void useProjectLibraryStore.getState().refresh();

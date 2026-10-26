@@ -4,6 +4,7 @@ import {
   AGENT_STATE_MAX_BYTES,
 } from '../../shared/agent-state';
 import packageJson from '../../package.json';
+import { classifyFile } from './binary-file';
 
 /**
  * Forge project archives are plain ZIP files with a root manifest:
@@ -11,19 +12,23 @@ import packageJson from '../../package.json';
  *   forge.manifest.json
  *   <root>/index.html
  *   <root>/src/...
+ *   <root>/public/...        (binary assets included since v2)
  *
  * The manifest makes it possible to reject archives from a newer format before
  * touching the virtual project.
  */
 export const ARCHIVE_FORMAT = 'forge-project';
-export const ARCHIVE_VERSION = 1;
+/** v2 adds binary `public/` files beside the text project files. */
+export const ARCHIVE_VERSION = 2;
 export const MANIFEST_FILENAME = 'forge.manifest.json';
 export const APP_VERSION = packageJson.version;
 
-const MAX_ARCHIVE_BYTES = 25 * 1024 * 1024;
-const MAX_EXTRACTED_BYTES = 20 * 1024 * 1024;
+// Public assets now travel in the archive, so the limits must accommodate the
+// attachment tool (8 MB per file, 10 files at once).
+const MAX_ARCHIVE_BYTES = 96 * 1024 * 1024;
+const MAX_EXTRACTED_BYTES = 96 * 1024 * 1024;
 const MAX_FILES = 2000;
-const MAX_FILE_BYTES = 4 * 1024 * 1024;
+const MAX_FILE_BYTES = 8 * 1024 * 1024;
 
 export interface ProjectArchiveManifest {
   format: typeof ARCHIVE_FORMAT;
@@ -40,6 +45,8 @@ export interface ProjectArchiveManifest {
 export interface ImportedProject {
   name: string;
   files: Record<string, string>;
+  /** Binary files under `public/`, kept as bytes so they survive a round trip. */
+  assets: Record<string, Uint8Array>;
   manifest: ProjectArchiveManifest;
   /** Raw transcript from the archive root, when present and valid JSON. */
   agentStateRaw: string | null;
@@ -171,22 +178,26 @@ export async function readProjectArchive(file: File): Promise<ImportedProject> {
 
   if (limitHit) {
     throw new ProjectArchiveError(
-      'This ZIP exceeds the import limits (20 MB total, 4 MB per file).',
+      'This ZIP exceeds the import limits (96 MB total, 8 MB per file).',
     );
   }
 
   const files: Record<string, string> = {};
+  const assets: Record<string, Uint8Array> = {};
   for (const [name, data] of Object.entries(extracted)) {
     if (name.endsWith('/') || !name.startsWith(prefix)) continue;
     const relative = name.slice(prefix.length);
     assertSafeRelativePath(relative);
-    files[`/${relative}`] = strFromU8(data);
-    if (Object.keys(files).length > MAX_FILES) {
-      throw new ProjectArchiveError(`This ZIP contains more than ${MAX_FILES} files.`);
-    }
+    const path = `/${relative}`;
+    const file = classifyFile(relative, data);
+    if (file.kind === 'text') files[path] = file.text;
+    else assets[path] = file.bytes;
   }
 
-  const fileCount = Object.keys(files).length;
+  const fileCount = Object.keys(files).length + Object.keys(assets).length;
+  if (fileCount > MAX_FILES) {
+    throw new ProjectArchiveError(`This ZIP contains more than ${MAX_FILES} files.`);
+  }
   if (fileCount === 0) {
     throw new ProjectArchiveError('This archive contains no project files.');
   }
@@ -220,5 +231,5 @@ export async function readProjectArchive(file: File): Promise<ImportedProject> {
     // Unreadable or invalid agent state; keep importing the project.
   }
 
-  return { name, files, manifest, agentStateRaw };
+  return { name, files, assets, manifest, agentStateRaw };
 }

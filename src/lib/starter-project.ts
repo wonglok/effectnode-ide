@@ -15,6 +15,7 @@
  * maps React/Zustand to esm.sh.
  */
 import { unzipSync } from 'fflate';
+import { classifyFile } from './binary-file';
 
 /** Vite serves `public/` from the site root in dev and copies it on build. */
 const STARTER_ZIP_URL = `${import.meta.env.BASE_URL}starter/template-001.zip`;
@@ -34,46 +35,6 @@ export const STARTER_ASSET_ENTRY = '/src/sections/apartment/index.ts';
 export interface StarterBundle {
   files: Record<string, string>;
   assets: Record<string, Uint8Array>;
-}
-
-/**
- * Extensions that are always stored as bytes. A file outside this list is
- * still treated as binary when it is not valid UTF-8.
- */
-const BINARY_EXTENSIONS = new Set([
-  'avif',
-  'bin',
-  'bmp',
-  'drc',
-  'exr',
-  'gif',
-  'glb',
-  'gltf',
-  'hdr',
-  'ico',
-  'jpeg',
-  'jpg',
-  'ktx',
-  'ktx2',
-  'mp3',
-  'mp4',
-  'ogg',
-  'otf',
-  'pdf',
-  'png',
-  'ttf',
-  'wav',
-  'webm',
-  'webp',
-  'woff',
-  'woff2',
-  'zip',
-]);
-
-function extensionOf(path: string): string {
-  const name = path.slice(path.lastIndexOf('/') + 1);
-  const dot = name.lastIndexOf('.');
-  return dot <= 0 ? '' : name.slice(dot + 1).toLowerCase();
 }
 
 /**
@@ -119,7 +80,6 @@ function readStarterZip(archive: Uint8Array): StarterBundle {
       !file.name.endsWith('.DS_Store'),
   });
   const root = archiveRoot(entries);
-  const decoder = new TextDecoder('utf-8', { fatal: true });
   const files: Record<string, string> = {};
   const assets: Record<string, Uint8Array> = {};
 
@@ -133,16 +93,9 @@ function readStarterZip(archive: Uint8Array): StarterBundle {
     if (!isSafeRelativePath(relative)) continue;
 
     const path = `/${relative}`;
-    if (!BINARY_EXTENSIONS.has(extensionOf(relative))) {
-      try {
-        files[path] = decoder.decode(bytes);
-        continue;
-      } catch {
-        // Not valid UTF-8, so treat it as a binary asset.
-      }
-    }
-
-    assets[path] = bytes;
+    const file = classifyFile(relative, bytes);
+    if (file.kind === 'text') files[path] = file.text;
+    else assets[path] = file.bytes;
   }
 
   return { files, assets };

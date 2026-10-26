@@ -43,6 +43,7 @@ interface ProjectState extends ProjectMetaState {
   importProject: (
     name: string,
     files: Record<string, string>,
+    assets: Record<string, Uint8Array>,
     agentStateRaw?: string | null
   ) => Promise<void>;
 }
@@ -156,7 +157,7 @@ export const useProjectStore = create<ProjectState>((set) => ({
     useUiStore.getState().toast('New project ready');
   },
 
-  importProject: async (name, files, agentStateRaw = null) => {
+  importProject: async (name, files, assets, agentStateRaw = null) => {
     flushAgentStatePersistence();
     pauseAgentStatePersistence();
     useWorkspaceStore.getState().flush();
@@ -164,7 +165,15 @@ export const useProjectStore = create<ProjectState>((set) => ({
     const local = createLocalProject(projectName);
     localStorage.setItem(CURRENT_PROJECT_KEY, local.id);
     bindOpfsProject(local.id, local.name);
-    await restartWithFiles(files, await loadProjectAssets(files, local.id));
+
+    // Binary public files live in `.forge/uploads`, which survives replaceAll
+    // and is reloaded alongside the text tree.
+    for (const [path, data] of Object.entries(assets)) {
+      await opfsProjectStore.writeUpload(local.id, path, data);
+    }
+
+    const projectAssets = await loadProjectAssets(files, local.id);
+    await restartWithFiles(files, { ...projectAssets, ...assets });
     useWorkspaceStore.getState().loadFiles(files);
     set({
       id: local.id,
@@ -182,7 +191,15 @@ export const useProjectStore = create<ProjectState>((set) => ({
     }
 
     const fileCount = Object.keys(files).length;
-    runtime.log('success', `Imported “${local.name}” · ${fileCount} files into OPFS`);
+    const assetCount = Object.keys(assets).length;
+    runtime.log(
+      'success',
+      `Imported “${local.name}” · ${fileCount} files${
+        assetCount > 0
+          ? ` + ${assetCount} public asset${assetCount === 1 ? '' : 's'}`
+          : ''
+      } into OPFS`
+    );
     useUiStore.getState().toast(`Imported “${local.name}”`);
   },
 }));

@@ -433,6 +433,26 @@ export class IdeRuntime {
     }
   }
 
+  /**
+   * Export the project's binary `public/` files as a path → bytes map. They
+   * are excluded from `snapshot()` because they cannot be read as text.
+   */
+  assetSnapshot(): Record<string, Uint8Array> {
+    const assets: Record<string, Uint8Array> = {};
+    if (!this.vfs) return assets;
+
+    for (const path of this.binaryAssetPaths) {
+      if (!path.startsWith('/public/')) continue;
+      try {
+        assets[path] = this.vfs.readFileSync(path);
+      } catch {
+        // The asset was removed between the set update and the read.
+      }
+    }
+
+    return assets;
+  }
+
   /** Export the entire VFS as a plain path → string map. */
   snapshot(): Record<string, string> {
     const files: Record<string, string> = {};

@@ -30,18 +30,21 @@ function archiveName(projectName: string): string {
 
 /**
  * Downloads the whole virtual project as a ZIP. Pending editor buffers are
- * flushed first so the archive matches what is on screen, then every VFS file
- * is nested under a folder named after the project.
+ * flushed first so the archive matches what is on screen, then every text file
+ * and binary `public/` asset is nested under a folder named after the project.
  */
 export function downloadProjectZip(): void {
   useWorkspaceStore.getState().flush();
   flushAgentStatePersistence();
 
   const files = runtime.snapshot();
+  const assets = runtime.assetSnapshot();
   const paths = Object.keys(files).sort();
+  const assetPaths = Object.keys(assets).sort();
+  const total = paths.length + assetPaths.length;
   const toast = useUiStore.getState().toast;
 
-  if (paths.length === 0) {
+  if (total === 0) {
     toast('Nothing to download — the project is empty', 'error');
     return;
   }
@@ -57,7 +60,7 @@ export function downloadProjectZip(): void {
     projectName: projectName.replace(/\(unsaved\)/gi, '').trim() || folder,
     root: folder,
     exportedAt: new Date().toISOString(),
-    fileCount: paths.length,
+    fileCount: total,
   };
   entries[MANIFEST_FILENAME] = strToU8(JSON.stringify(manifest, null, 2));
 
@@ -80,6 +83,13 @@ export function downloadProjectZip(): void {
     const relative = path.replace(/^\/+/, '');
     if (!relative) continue;
     entries[`${folder}/${relative}`] = strToU8(files[path]);
+  }
+
+  // Public binaries (models, HDRIs, uploads) travel beside the text files.
+  for (const path of assetPaths) {
+    const relative = path.replace(/^\/+/, '');
+    if (!relative) continue;
+    entries[`${folder}/${relative}`] = assets[path];
   }
 
   let archive: Uint8Array;
@@ -107,6 +117,13 @@ export function downloadProjectZip(): void {
   anchor.remove();
   window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 
-  runtime.log('success', `Downloaded ${paths.length} files as ${folder}.zip`);
-  toast(`Downloaded ${paths.length} files`);
+  runtime.log(
+    'success',
+    `Downloaded ${total} files${
+      assetPaths.length > 0
+        ? ` (${assetPaths.length} public asset${assetPaths.length === 1 ? '' : 's'})`
+        : ''
+    } as ${folder}.zip`
+  );
+  toast(`Downloaded ${total} files`);
 }
