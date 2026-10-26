@@ -21,6 +21,7 @@ import { useUiStore } from '@/store/ui';
 
 export default function App() {
   const explorerOpen = useUiStore((state) => state.explorerOpen);
+  const chatOpen = useUiStore((state) => state.chatOpen);
   const terminalOpen = useUiStore((state) => state.terminalOpen);
   const agentWidth = useUiStore((state) => state.agentWidth);
   const previewRatio = useUiStore((state) => state.previewRatio);
@@ -51,9 +52,12 @@ export default function App() {
 
       if (event.shiftKey && key === 'a') {
         event.preventDefault();
-        const input = document.getElementById('agent-input') as HTMLTextAreaElement | null;
-        input?.focus();
-        input?.scrollIntoView({ block: 'nearest' });
+        if (!ui.chatOpen) ui.setChatOpen(true);
+        window.setTimeout(() => {
+          const input = document.getElementById('agent-input') as HTMLTextAreaElement | null;
+          input?.focus();
+          input?.scrollIntoView({ block: 'nearest' });
+        }, 50);
       } else if (event.shiftKey && key === 'o') {
         event.preventDefault();
         ui.setProjectSwitcherOpen(!ui.projectSwitcherOpen);
@@ -62,7 +66,9 @@ export default function App() {
         ui.toggleExplorer();
       } else if (key === 'j') {
         event.preventDefault();
+        const opening = !ui.terminalOpen;
         ui.toggleTerminal();
+        if (opening && !ui.explorerOpen) ui.setExplorerOpen(true);
       }
     };
 
@@ -140,53 +146,71 @@ export default function App() {
         {explorerOpen ? <FileExplorer /> : null}
 
         <main className="stage" ref={stageRef}>
-          <section
-            className={explorerOpen ? 'editing' : 'editing is-code-hidden'}
-            ref={editingRef}
-          >
-            {explorerOpen ? (
-              <>
-                <div className="code-column">
-                  <EditorPane />
-                  {terminalOpen ? (
-                    <div
-                      className="splitter splitter-horizontal"
-                      onPointerDown={startTerminalDrag}
-                      role="separator"
-                      aria-orientation="horizontal"
-                      title="Drag to resize the panel"
-                    />
-                  ) : null}
-                  {terminalOpen ? <TerminalPane height={terminalHeight} /> : null}
-                </div>
+          {explorerOpen || chatOpen ? (
+            <>
+              <section
+                className={explorerOpen ? 'editing' : 'editing is-code-hidden'}
+                ref={editingRef}
+              >
+                {explorerOpen ? (
+                  <>
+                    <div className="code-column">
+                      <EditorPane />
+                      {terminalOpen ? (
+                        <div
+                          className="splitter splitter-horizontal"
+                          onPointerDown={startTerminalDrag}
+                          role="separator"
+                          aria-orientation="horizontal"
+                          title="Drag to resize the panel"
+                        />
+                      ) : null}
+                      {terminalOpen ? (
+                        <TerminalPane height={terminalHeight} />
+                      ) : null}
+                    </div>
 
-                <div
-                  className="splitter splitter-vertical agent-splitter"
-                  onPointerDown={startAgentDrag}
-                  role="separator"
-                  aria-orientation="vertical"
-                  title="Drag to resize the agent chat"
-                />
-              </>
-            ) : null}
+                    {chatOpen ? (
+                      <div
+                        className="splitter splitter-vertical agent-splitter"
+                        onPointerDown={startAgentDrag}
+                        role="separator"
+                        aria-orientation="vertical"
+                        title="Drag to resize the agent chat"
+                      />
+                    ) : null}
+                  </>
+                ) : null}
 
-            <div
-              className="agent-column"
-              style={explorerOpen ? { flexBasis: `${agentWidth}px` } : undefined}
-            >
-              <AgentPanel />
-            </div>
-          </section>
+                {chatOpen ? (
+                  <div
+                    className="agent-column"
+                    style={
+                      explorerOpen ? { flexBasis: `${agentWidth}px` } : undefined
+                    }
+                  >
+                    <AgentPanel />
+                  </div>
+                ) : null}
+              </section>
+
+              <div
+                className="splitter splitter-vertical"
+                onPointerDown={startPreviewDrag}
+                role="separator"
+                aria-orientation="vertical"
+                title="Drag to resize the preview"
+              />
+            </>
+          ) : null}
 
           <div
-            className="splitter splitter-vertical"
-            onPointerDown={startPreviewDrag}
-            role="separator"
-            aria-orientation="vertical"
-            title="Drag to resize the preview"
-          />
-
-          <div className="preview-slot" style={{ flexBasis: `${previewRatio * 100}%` }}>
+            className="preview-slot"
+            style={{
+              flexBasis:
+                explorerOpen || chatOpen ? `${previewRatio * 100}%` : '100%',
+            }}
+          >
             <RightDock />
           </div>
         </main>

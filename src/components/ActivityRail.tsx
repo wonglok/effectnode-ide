@@ -1,10 +1,17 @@
-import { CircleHelp, Files, FolderKanban } from "lucide-react";
+import {
+  CircleHelp,
+  Files,
+  FolderKanban,
+  MessageSquareText,
+} from "lucide-react";
 import { useRuntimeStore } from "@/store/runtime";
 import { useUiStore } from "@/store/ui";
 
 export function ActivityRail() {
   const explorerOpen = useUiStore((state) => state.explorerOpen);
   const toggleExplorer = useUiStore((state) => state.toggleExplorer);
+  const chatOpen = useUiStore((state) => state.chatOpen);
+  const toggleChat = useUiStore((state) => state.toggleChat);
   const setShortcutsOpen = useUiStore((state) => state.setShortcutsOpen);
   const setProjectSwitcherOpen = useUiStore(
     (state) => state.setProjectSwitcherOpen,
@@ -29,6 +36,13 @@ export function ActivityRail() {
           title="Toggle explorer & editor column (⌘B)"
         >
           <Files size={18} />
+        </button>
+        <button
+          className={`rail-button ${chatOpen ? "is-active" : ""}`}
+          onClick={toggleChat}
+          title="Toggle chat view"
+        >
+          <MessageSquareText size={18} />
         </button>
         {/* <button
           className={`rail-button ${terminalOpen && terminalTab === "console" ? "is-active" : ""}`}

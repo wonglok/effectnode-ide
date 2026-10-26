@@ -39,6 +39,7 @@ let terminalSequence = 0;
 
 interface UiState {
   explorerOpen: boolean;
+  chatOpen: boolean;
   terminalOpen: boolean;
   terminalTab: TerminalTab;
   agentWidth: number;
@@ -57,6 +58,8 @@ interface UiState {
   dismissToast: (id: number) => void;
   setExplorerOpen: (open: boolean) => void;
   toggleExplorer: () => void;
+  setChatOpen: (open: boolean) => void;
+  toggleChat: () => void;
   setTerminalOpen: (open: boolean) => void;
   toggleTerminal: () => void;
   setTerminalTab: (tab: TerminalTab) => void;
@@ -82,6 +85,7 @@ export const useUiStore = create<UiState>()(
   persist(
     (set, get) => ({
       explorerOpen: false,
+      chatOpen: true,
       terminalOpen: true,
       terminalTab: "console",
       agentWidth: 380,
@@ -119,6 +123,8 @@ export const useUiStore = create<UiState>()(
       setExplorerOpen: (open) => set({ explorerOpen: open }),
       toggleExplorer: () =>
         set((state) => ({ explorerOpen: !state.explorerOpen })),
+      setChatOpen: (open) => set({ chatOpen: open }),
+      toggleChat: () => set((state) => ({ chatOpen: !state.chatOpen })),
       setTerminalOpen: (open) => set({ terminalOpen: open }),
       toggleTerminal: () =>
         set((state) => ({ terminalOpen: !state.terminalOpen })),
@@ -168,6 +174,7 @@ export const useUiStore = create<UiState>()(
       },
       partialize: (state) => ({
         explorerOpen: state.explorerOpen,
+        chatOpen: state.chatOpen,
         terminalOpen: state.terminalOpen,
         terminalTab: state.terminalTab,
         agentWidth: state.agentWidth,
