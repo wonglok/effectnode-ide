@@ -1,4 +1,4 @@
-import { CircleHelp, Files } from "lucide-react";
+import { CircleHelp, Files, FolderKanban } from "lucide-react";
 import { useRuntimeStore } from "@/store/runtime";
 import { useUiStore } from "@/store/ui";
 
@@ -6,6 +6,9 @@ export function ActivityRail() {
   const explorerOpen = useUiStore((state) => state.explorerOpen);
   const toggleExplorer = useUiStore((state) => state.toggleExplorer);
   const setShortcutsOpen = useUiStore((state) => state.setShortcutsOpen);
+  const setProjectSwitcherOpen = useUiStore(
+    (state) => state.setProjectSwitcherOpen
+  );
   const status = useRuntimeStore((state) => state.status);
 
   //
@@ -13,6 +16,13 @@ export function ActivityRail() {
   return (
     <nav className="rail" aria-label="Activity">
       <div className="rail-group">
+        <button
+          className="rail-button"
+          onClick={() => setProjectSwitcherOpen(true)}
+          title="Projects & versions (⇧⌘O)"
+        >
+          <FolderKanban size={18} />
+        </button>
         <button
           className={`rail-button ${explorerOpen ? "is-active" : ""}`}
           onClick={toggleExplorer}

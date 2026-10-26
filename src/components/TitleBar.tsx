@@ -1,8 +1,10 @@
 import { useRef, type ChangeEvent } from 'react';
 import {
+  ChevronsUpDown,
   CircleHelp,
   Download,
   FilePlus2,
+  History,
   LogOut,
   RotateCw,
   Upload,
@@ -16,6 +18,7 @@ import {
   resumeAgentStatePersistence,
 } from '@/store/agent';
 import { useAuthStore } from '@/store/auth';
+import { useProjectLibraryStore } from '@/store/library';
 import { useProjectStore } from '@/store/projects';
 import { useRuntimeStore } from '@/store/runtime';
 import { useUiStore } from '@/store/ui';
@@ -33,11 +36,13 @@ export function TitleBar() {
   const reloadPreview = useRuntimeStore((state) => state.reloadPreview);
   const newProject = useProjectStore((state) => state.newProject);
   const importProject = useProjectStore((state) => state.importProject);
-  const renameProject = useProjectStore((state) => state.renameProject);
 
   const openConfirm = useUiStore((state) => state.openConfirm);
   const closeConfirm = useUiStore((state) => state.closeConfirm);
   const openPrompt = useUiStore((state) => state.openPrompt);
+  const setProjectSwitcherOpen = useUiStore(
+    (state) => state.setProjectSwitcherOpen
+  );
   const setShortcutsOpen = useUiStore((state) => state.setShortcutsOpen);
   const setTerminalTab = useUiStore((state) => state.setTerminalTab);
   const toast = useUiStore((state) => state.toast);
@@ -64,7 +69,9 @@ export function TitleBar() {
             archive.name,
             archive.files,
             archive.agentStateRaw
-          ).catch((error) => {
+          ).then(() => {
+            void useProjectLibraryStore.getState().refresh();
+          }).catch((error) => {
             const message = error instanceof Error ? error.message : String(error);
             runtime.log('error', `Import failed: ${message}`);
             toast('Could not import the project', 'error');
@@ -79,14 +86,21 @@ export function TitleBar() {
   };
 
   const onNew = () => {
-    openConfirm({
-      title: 'Start a new project?',
-      message:
-        'The current virtual files will be replaced with the starter template. Download first if you want to keep them.',
-      confirmLabel: 'Start new project',
-      onConfirm: () => {
-        closeConfirm();
-        void newProject('untitled');
+    openPrompt({
+      title: 'New project',
+      label: 'Project name',
+      initialValue: 'untitled',
+      placeholder: 'e.g. landing-page-v2',
+      confirmLabel: 'Create project',
+      onConfirm: (name) => {
+        const projectName = name.trim();
+        if (!projectName) return;
+        void newProject(projectName).then(async () => {
+          const library = useProjectLibraryStore.getState();
+          await library.refresh();
+          const createdId = useProjectStore.getState().id;
+          if (createdId) await library.select(createdId);
+        });
       },
     });
   };
@@ -110,22 +124,24 @@ export function TitleBar() {
         <span className="titlebar-divider" />
         <button
           className="project-chip"
-          onClick={() =>
-            openPrompt({
-              title: 'Rename project',
-              label: 'Project name',
-              initialValue: name,
-              confirmLabel: 'Rename',
-              onConfirm: renameProject,
-            })
-          }
-          title="Rename project"
+          onClick={() => setProjectSwitcherOpen(true)}
+          title="Switch project & browse versions (⇧⌘O)"
         >
           <span className="project-chip-name">{name}</span>
+          <ChevronsUpDown size={12} className="project-chip-caret" />
         </button>
       </div>
 
       <div className="titlebar-right">
+        <button
+          className="tool-button"
+          onClick={() => setProjectSwitcherOpen(true)}
+          title="Projects & versions (⇧⌘O)"
+        >
+          <History size={13} />
+          <span className="tool-label">Versions</span>
+        </button>
+
         <button className="tool-button" onClick={onNew} title="New project">
           <FilePlus2 size={13} />
           <span className="tool-label">New</span>

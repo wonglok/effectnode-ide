@@ -19,6 +19,10 @@ const SANDBOX_ID_KEY = 'forge.sandboxId';
 const LOCAL_PROJECT_KEY = 'forge.localProject';
 const META_DIR = '.forge';
 const META_FILE = 'project.json';
+const VERSIONS_DIR = 'versions';
+const VERSION_INDEX = 'index.json';
+/** Oldest snapshots beyond this are pruned when a new version is saved. */
+const MAX_VERSIONS = 40;
 
 export interface LocalProjectMeta {
   id: string;
@@ -36,6 +40,32 @@ export interface ProjectManifest {
 export interface OpfsProject {
   files: Record<string, string>;
   manifest: ProjectManifest | null;
+}
+
+/** One row in the project library. */
+export interface ProjectCatalogEntry extends LocalProjectMeta {
+  fileCount: number;
+  versionCount: number;
+  latestVersionAt: string | null;
+}
+
+/** Indexed metadata for one saved snapshot. */
+export interface ProjectVersionMeta {
+  id: string;
+  label: string;
+  createdAt: string;
+  fileCount: number;
+  bytes: number;
+  hasAgentState: boolean;
+}
+
+export interface ProjectVersion extends ProjectVersionMeta {
+  files: Record<string, string>;
+  agentState: string | null;
+}
+
+interface VersionIndex {
+  versions: ProjectVersionMeta[];
 }
 
 function randomSegment(): string {
@@ -103,15 +133,20 @@ export function clearLocalProject(): void {
   }
 }
 
-/** Mint a new OPFS-backed project identity (unsaved projects included). */
-export function createLocalProject(name: string): LocalProjectMeta {
+/** Mint a project identity without touching the "last local project" pointer. */
+export function mintProject(name: string): LocalProjectMeta {
   const now = new Date().toISOString();
-  const meta: LocalProjectMeta = {
+  return {
     id: `local-${randomSegment()}`,
-    name: name.trim() || 'untitled',
+    name: name.trim().slice(0, 120) || 'untitled',
     createdAt: now,
     updatedAt: now,
   };
+}
+
+/** Mint a new OPFS-backed project identity (unsaved projects included). */
+export function createLocalProject(name: string): LocalProjectMeta {
+  const meta = mintProject(name);
   writeLocalProject(meta);
   return meta;
 }
@@ -324,21 +359,33 @@ class OpfsProjectStore {
       if (!projects || !validId(projectId)) return;
 
       let preservedState = agentState;
-      if (preservedState === undefined) {
-        try {
-          const existing = await projects.getDirectoryHandle(projectId, { create: false });
-          preservedState = await readAgentStateHandle(existing);
-        } catch {
-          preservedState = null;
-        }
-      }
-
+      let preservedManifest: ProjectManifest | null = null;
       try {
-        await projects.removeEntry(projectId, { recursive: true });
+        const existing = await projects.getDirectoryHandle(projectId, { create: false });
+        preservedManifest = await readManifestHandle(existing);
+        if (preservedState === undefined) {
+          preservedState = await readAgentStateHandle(existing);
+        }
       } catch {
         // First write for this project.
       }
+
       const project = await projects.getDirectoryHandle(projectId, { create: true });
+
+      // Clear the working tree but keep `.forge` (manifest + version history),
+      // which lives beside the code inside the project folder.
+      const stale: string[] = [];
+      for await (const [name] of project) {
+        if (name === META_DIR) continue;
+        stale.push(name);
+      }
+      for (const name of stale) {
+        try {
+          await project.removeEntry(name, { recursive: true });
+        } catch {
+          // Already gone.
+        }
+      }
 
       for (const [virtualPath, content] of Object.entries(files)) {
         const segments = safeSegments(virtualPath);
@@ -352,7 +399,8 @@ class OpfsProjectStore {
         await writable.close();
       }
 
-      if (manifest) await writeManifestHandle(project, manifest);
+      const nextManifest = manifest ?? preservedManifest ?? undefined;
+      if (nextManifest) await writeManifestHandle(project, nextManifest);
       if (preservedState) await writeAgentStateHandle(project, preservedState);
     });
   }
@@ -364,16 +412,7 @@ class OpfsProjectStore {
       if (!project) return null;
       const files: Record<string, string> = {};
       await readTree(project, '', files);
-      let manifest: ProjectManifest | null = null;
-      try {
-        const metaDir = await project.getDirectoryHandle(META_DIR, { create: false });
-        const metaFile = await metaDir.getFileHandle(META_FILE, { create: false });
-        const raw = await (await metaFile.getFile()).text();
-        manifest = readJson<ProjectManifest>(raw);
-      } catch {
-        // No manifest yet.
-      }
-      return { files, manifest };
+      return { files, manifest: await readManifestHandle(project) };
     });
   }
 
@@ -382,6 +421,189 @@ class OpfsProjectStore {
       const project = await this.projectDir(projectId, true);
       if (!project) return;
       await writeManifestHandle(project, manifest);
+    });
+  }
+
+  /** Every project stored in this browser, newest activity first. */
+  listProjects(): Promise<ProjectCatalogEntry[]> {
+    return this.run(async () => {
+      const projects = await this.projectsDir(false);
+      if (!projects) return [] as ProjectCatalogEntry[];
+
+      const entries: ProjectCatalogEntry[] = [];
+      for await (const [name, handle] of projects) {
+        if (handle.kind !== 'directory' || !validId(name)) continue;
+        try {
+          const project = handle as FileSystemDirectoryHandle;
+          const manifest = await readManifestHandle(project);
+          const stats = await scanProjectStats(project);
+          const versions = (await readVersionIndexHandle(project)).versions;
+          entries.push({
+            id: name,
+            name: manifest?.name || 'untitled',
+            createdAt: manifest?.createdAt || stats.createdAt,
+            updatedAt: maxIso(manifest?.updatedAt, stats.updatedAt),
+            fileCount: stats.fileCount,
+            versionCount: versions.length,
+            latestVersionAt: versions[0]?.createdAt ?? null,
+          });
+        } catch {
+          // Skip folders that cannot be read.
+        }
+      }
+
+      entries.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+      return entries;
+    });
+  }
+
+  /** Rename a project without switching to it. */
+  renameProject(projectId: string, name: string): Promise<boolean> {
+    return this.run(async () => {
+      const project = await this.projectDir(projectId, false);
+      if (!project) return false;
+      const existing = (await readManifestHandle(project)) ?? {};
+      await writeManifestHandle(project, {
+        ...existing,
+        name: name.trim().slice(0, 120) || 'untitled',
+        updatedAt: new Date().toISOString(),
+      });
+      return true;
+    });
+  }
+
+  /** Copy the current code (not history) into a brand-new project folder. */
+  async duplicateProject(sourceId: string, name: string): Promise<LocalProjectMeta | null> {
+    const source = await this.read(sourceId);
+    if (!source || Object.keys(source.files).length === 0) return null;
+    const agentState = await this.readAgentState(sourceId);
+    const now = new Date().toISOString();
+    const meta = mintProject(name);
+    await this.replaceAll(
+      meta.id,
+      source.files,
+      { name: meta.name, createdAt: now, updatedAt: now },
+      agentState
+    );
+    return { ...meta, createdAt: now, updatedAt: now };
+  }
+
+  /* ── Version history ─────────────────────────────────────── */
+
+  listVersions(projectId: string): Promise<ProjectVersionMeta[]> {
+    return this.run(async () => {
+      const project = await this.projectDir(projectId, false);
+      if (!project) return [];
+      return (await readVersionIndexHandle(project)).versions;
+    });
+  }
+
+  /** Snapshot every text file in a project plus its agent transcript. */
+  createVersion(
+    projectId: string,
+    label: string,
+    files: Record<string, string>,
+    agentState: string | null
+  ): Promise<ProjectVersionMeta> {
+    return this.run(async () => {
+      const project = await this.projectDir(projectId, true);
+      if (!project) throw new Error('Project storage is unavailable');
+
+      const versionsDir = await projectVersionsDir(project, true);
+      // Make sure the index has been read before writing a new snapshot.
+      const index = await readVersionIndexHandle(project);
+      const versionId = makeVersionId();
+      const versionDir = await versionsDir.getDirectoryHandle(versionId, { create: true });
+
+      let bytes = 0;
+      let fileCount = 0;
+      for (const [virtualPath, content] of Object.entries(files)) {
+        const segments = safeSegments(virtualPath);
+        if (!segments) continue;
+        const name = segments.pop();
+        if (!name) continue;
+        const parent = await ensureSubdir(versionDir, segments, true);
+        const file = await parent.getFileHandle(name, { create: true });
+        const writable = await file.createWritable();
+        await writable.write(content);
+        await writable.close();
+        bytes += new TextEncoder().encode(content).length;
+        fileCount += 1;
+      }
+
+      if (agentState) {
+        const file = await versionDir.getFileHandle(AGENT_STATE_FILENAME, { create: true });
+        const writable = await file.createWritable();
+        await writable.write(agentState);
+        await writable.close();
+      }
+
+      const meta: ProjectVersionMeta = {
+        id: versionId,
+        label: label.trim().slice(0, 120) || defaultVersionLabel(),
+        createdAt: new Date().toISOString(),
+        fileCount,
+        bytes,
+        hasAgentState: Boolean(agentState),
+      };
+
+      const versions = [meta, ...index.versions].sort((a, b) =>
+        b.createdAt.localeCompare(a.createdAt)
+      );
+      for (const stale of versions.slice(MAX_VERSIONS)) {
+        try {
+          await versionsDir.removeEntry(stale.id, { recursive: true });
+        } catch {
+          // Already gone.
+        }
+      }
+      await writeVersionIndexHandle(project, { versions: versions.slice(0, MAX_VERSIONS) });
+
+      const manifest = (await readManifestHandle(project)) ?? {};
+      await writeManifestHandle(project, { ...manifest, updatedAt: meta.createdAt });
+      return meta;
+    });
+  }
+
+  readVersion(projectId: string, versionId: string): Promise<ProjectVersion | null> {
+    return this.run(async () => {
+      if (!validId(versionId)) return null;
+      const project = await this.projectDir(projectId, false);
+      if (!project) return null;
+      const index = await readVersionIndexHandle(project);
+      const meta = index.versions.find((entry) => entry.id === versionId);
+      if (!meta) return null;
+
+      let versionDir: FileSystemDirectoryHandle;
+      try {
+        const versionsDir = await projectVersionsDir(project, false);
+        versionDir = await versionsDir.getDirectoryHandle(versionId, { create: false });
+      } catch {
+        return null;
+      }
+
+      const files: Record<string, string> = {};
+      await readTree(versionDir, '', files);
+      const agentState = await readAgentStateHandle(versionDir);
+      return { ...meta, files, agentState };
+    });
+  }
+
+  deleteVersion(projectId: string, versionId: string): Promise<void> {
+    return this.run(async () => {
+      if (!validId(versionId)) return;
+      const project = await this.projectDir(projectId, false);
+      if (!project) return;
+      try {
+        const versionsDir = await projectVersionsDir(project, false);
+        await versionsDir.removeEntry(versionId, { recursive: true });
+      } catch {
+        // Already gone.
+      }
+      const index = await readVersionIndexHandle(project);
+      await writeVersionIndexHandle(project, {
+        versions: index.versions.filter((entry) => entry.id !== versionId),
+      });
     });
   }
 
@@ -413,14 +635,143 @@ class OpfsProjectStore {
   }
 }
 
+function makeVersionId(): string {
+  return `v-${Date.now().toString(36)}-${randomSegment().slice(0, 6)}`;
+}
+
+function defaultVersionLabel(): string {
+  return new Date().toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function maxIso(manifestIso: string | undefined, fileIso: string): string {
+  if (!manifestIso) return fileIso;
+  const manifestTime = Date.parse(manifestIso);
+  const fileTime = Date.parse(fileIso);
+  if (!Number.isFinite(manifestTime)) return fileIso;
+  if (!Number.isFinite(fileTime)) return manifestIso;
+  return manifestTime >= fileTime ? manifestIso : fileIso;
+}
+
+function isValidVersionMeta(value: unknown): value is ProjectVersionMeta {
+  if (!value || typeof value !== 'object') return false;
+  const entry = value as Partial<ProjectVersionMeta>;
+  return (
+    typeof entry.id === 'string' &&
+    validId(entry.id) &&
+    typeof entry.label === 'string' &&
+    typeof entry.createdAt === 'string' &&
+    typeof entry.fileCount === 'number' &&
+    typeof entry.bytes === 'number' &&
+    typeof entry.hasAgentState === 'boolean'
+  );
+}
+
+async function readManifestHandle(
+  project: FileSystemDirectoryHandle
+): Promise<ProjectManifest | null> {
+  try {
+    const metaDir = await project.getDirectoryHandle(META_DIR, { create: false });
+    const metaFile = await metaDir.getFileHandle(META_FILE, { create: false });
+    return readJson<ProjectManifest>(await (await metaFile.getFile()).text());
+  } catch {
+    return null;
+  }
+}
+
+async function projectVersionsDir(
+  project: FileSystemDirectoryHandle,
+  create: boolean
+): Promise<FileSystemDirectoryHandle> {
+  const metaDir = await project.getDirectoryHandle(META_DIR, { create });
+  return metaDir.getDirectoryHandle(VERSIONS_DIR, { create });
+}
+
+async function readVersionIndexHandle(
+  project: FileSystemDirectoryHandle
+): Promise<VersionIndex> {
+  try {
+    const versionsDir = await projectVersionsDir(project, false);
+    const indexFile = await versionsDir.getFileHandle(VERSION_INDEX, { create: false });
+    const parsed = readJson<VersionIndex>(await (await indexFile.getFile()).text());
+    if (!parsed || !Array.isArray(parsed.versions)) return { versions: [] };
+    return {
+      versions: parsed.versions
+        .filter(isValidVersionMeta)
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    };
+  } catch {
+    return { versions: [] };
+  }
+}
+
+async function writeVersionIndexHandle(
+  project: FileSystemDirectoryHandle,
+  index: VersionIndex
+): Promise<void> {
+  const versionsDir = await projectVersionsDir(project, true);
+  const indexFile = await versionsDir.getFileHandle(VERSION_INDEX, { create: true });
+  const writable = await indexFile.createWritable();
+  await writable.write(JSON.stringify(index, null, 2));
+  await writable.close();
+}
+
+interface ProjectStats {
+  fileCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** Count files and derive timestamps without reading file contents. */
+async function scanProjectStats(
+  project: FileSystemDirectoryHandle
+): Promise<ProjectStats> {
+  let fileCount = 0;
+  let newest = 0;
+  let oldest = Number.POSITIVE_INFINITY;
+
+  const visit = async (directory: FileSystemDirectoryHandle, root: boolean) => {
+    for await (const [name, handle] of directory) {
+      if (root && (name === META_DIR || name === AGENT_STATE_FILENAME)) continue;
+      if (handle.kind === 'file') {
+        try {
+          const file = await (handle as FileSystemFileHandle).getFile();
+          fileCount += 1;
+          if (file.lastModified > newest) newest = file.lastModified;
+          if (file.lastModified < oldest) oldest = file.lastModified;
+        } catch {
+          // Unreadable file metadata.
+        }
+      } else {
+        await visit(handle as FileSystemDirectoryHandle, false);
+      }
+    }
+  };
+
+  await visit(project, true);
+  const fallback = new Date().toISOString();
+  return {
+    fileCount,
+    createdAt:
+      Number.isFinite(oldest) && oldest > 0 ? new Date(oldest).toISOString() : fallback,
+    updatedAt: newest > 0 ? new Date(newest).toISOString() : fallback,
+  };
+}
+
 async function writeManifestHandle(
   project: FileSystemDirectoryHandle,
   manifest: ProjectManifest
 ): Promise<void> {
   const metaDir = await project.getDirectoryHandle(META_DIR, { create: true });
   const metaFile = await metaDir.getFileHandle(META_FILE, { create: true });
+  // Merge so a name-only update never drops createdAt/updatedAt.
+  const existing = await readManifestHandle(project);
   const writable = await metaFile.createWritable();
-  await writable.write(JSON.stringify(manifest, null, 2));
+  await writable.write(JSON.stringify({ ...existing, ...manifest }, null, 2));
   await writable.close();
 }
 

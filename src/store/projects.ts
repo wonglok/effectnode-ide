@@ -4,9 +4,11 @@ import {
   bindOpfsProject,
   createLocalProject,
   getBoundProjectId,
+  opfsProjectStore,
   readLocalProject,
   updateOpfsProjectName,
   writeLocalProject,
+  type OpfsProject,
 } from '@/lib/opfs';
 import { runtime } from '@/lib/runtime';
 import {
@@ -18,6 +20,7 @@ import {
 import {
   flushAgentStatePersistence,
   pauseAgentStatePersistence,
+  resumeAgentStatePersistence,
   useAgentStore,
 } from './agent';
 import { restartWithFiles } from './runtime';
@@ -45,6 +48,7 @@ async function starterAssetsFor(
 }
 
 export interface ProjectMetaState {
+  id: string | null;
   name: string;
   createdAt: string | null;
   updatedAt: string | null;
@@ -53,6 +57,8 @@ export interface ProjectMetaState {
 interface ProjectState extends ProjectMetaState {
   setCurrent: (meta: ProjectMetaState | null) => void;
   renameProject: (name: string) => void;
+  /** Open an existing OPFS project, replacing the live workspace. */
+  openProject: (id: string) => Promise<void>;
   newProject: (name?: string) => Promise<void>;
   /** Replace the workspace with files from a validated Forge ZIP archive. */
   importProject: (
@@ -63,16 +69,18 @@ interface ProjectState extends ProjectMetaState {
 }
 
 export const useProjectStore = create<ProjectState>((set) => ({
+  id: getBoundProjectId(),
   name: STARTER_PROJECT_NAME,
   createdAt: null,
   updatedAt: null,
 
   setCurrent: (meta) => {
     if (!meta) {
-      set({ createdAt: null, updatedAt: null });
+      set({ id: null, createdAt: null, updatedAt: null });
       return;
     }
     set({
+      id: meta.id,
       name: meta.name,
       createdAt: meta.createdAt,
       updatedAt: meta.updatedAt,
@@ -81,7 +89,7 @@ export const useProjectStore = create<ProjectState>((set) => ({
   },
 
   renameProject: (name) => {
-    const projectName = name.trim();
+    const projectName = name.trim().slice(0, 120);
     if (!projectName) return;
     const updatedAt = new Date().toISOString();
     set({ name: projectName, updatedAt });
@@ -93,6 +101,55 @@ export const useProjectStore = create<ProjectState>((set) => ({
     if (local && local.id === getBoundProjectId()) {
       writeLocalProject({ ...local, name: projectName, updatedAt });
     }
+  },
+
+  openProject: async (id) => {
+    const currentId = getBoundProjectId();
+    if (!id || id === currentId) return;
+
+    flushAgentStatePersistence();
+    pauseAgentStatePersistence();
+    useWorkspaceStore.getState().flush();
+
+    let cached: OpfsProject | null;
+    try {
+      cached = await opfsProjectStore.read(id);
+    } catch (error) {
+      resumeAgentStatePersistence();
+      throw error;
+    }
+    const files = cached?.files ?? {};
+    if (!cached || Object.keys(files).length === 0) {
+      resumeAgentStatePersistence();
+      throw new Error('That project is empty or missing from OPFS.');
+    }
+
+    const manifest = cached.manifest ?? {};
+    const epoch = new Date(0).toISOString();
+    const meta: ProjectMetaState = {
+      id,
+      name: manifest.name || 'untitled',
+      createdAt: manifest.createdAt || epoch,
+      updatedAt: manifest.updatedAt || epoch,
+    };
+
+    localStorage.setItem(CURRENT_PROJECT_KEY, id);
+    bindOpfsProject(id, meta.name);
+
+    try {
+      // replaceProject mirrors the loaded files back into this project's folder,
+      // preserving `.forge` (manifest and version history).
+      await restartWithFiles(files, await starterAssetsFor(files));
+      useWorkspaceStore.getState().loadFiles(files);
+      set({ ...meta });
+      await useAgentStore.getState().loadPersisted();
+    } catch (error) {
+      resumeAgentStatePersistence();
+      throw error;
+    }
+
+    runtime.log('info', `Opened “${meta.name}” from OPFS`);
+    useUiStore.getState().toast(`Opened “${meta.name}”`);
   },
 
   newProject: async (name) => {
@@ -110,6 +167,7 @@ export const useProjectStore = create<ProjectState>((set) => ({
     );
     useWorkspaceStore.getState().loadFiles(STARTER_FILES);
     set({
+      id: local.id,
       name: local.name,
       createdAt: local.createdAt,
       updatedAt: local.updatedAt,
@@ -130,6 +188,7 @@ export const useProjectStore = create<ProjectState>((set) => ({
     await restartWithFiles(files, await starterAssetsFor(files));
     useWorkspaceStore.getState().loadFiles(files);
     set({
+      id: local.id,
       name: local.name,
       createdAt: local.createdAt,
       updatedAt: local.updatedAt,

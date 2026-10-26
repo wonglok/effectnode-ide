@@ -106,6 +106,7 @@ export function PromptDialog() {
           }}
           placeholder={request.placeholder}
           spellCheck={false}
+          maxLength={120}
           id="forge-prompt-input"
           name="prompt-value"
         />
@@ -149,6 +150,7 @@ export function ConfirmDialog() {
 }
 
 const SHORTCUTS = [
+  ['⇧⌘O', 'Projects & versions'],
   ['⌘B', 'Toggle the file explorer'],
   ['⌘J', 'Toggle the console / terminal'],
   ['⇧⌘A', 'Focus the agent chat'],
@@ -197,6 +199,10 @@ export function ShortcutsDialog() {
           <li>
             Project files are mirrored into the browser's <strong>Origin Private File System</strong> so
             work survives a reload.
+          </li>
+          <li>
+            <strong>Projects & versions</strong> keeps every project in OPFS; each project has its own
+            snapshot timeline with restore and delete.
           </li>
           <li>
             The IDE itself is React + Zustand; the shell runs against the same virtual file system.

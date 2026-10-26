@@ -7,6 +7,7 @@ import {
 } from '@/components/Dialogs';
 import { EditorPane } from '@/components/EditorPane';
 import { FileExplorer } from '@/components/FileExplorer';
+import { ProjectSwitcher } from '@/components/ProjectSwitcher';
 import { RightDock } from '@/components/RightDock';
 import { StatusBar } from '@/components/StatusBar';
 import { TerminalPane } from '@/components/TerminalPane';
@@ -53,6 +54,9 @@ export default function App() {
         const input = document.getElementById('agent-input') as HTMLTextAreaElement | null;
         input?.focus();
         input?.scrollIntoView({ block: 'nearest' });
+      } else if (event.shiftKey && key === 'o') {
+        event.preventDefault();
+        ui.setProjectSwitcherOpen(!ui.projectSwitcherOpen);
       } else if (key === 'b') {
         event.preventDefault();
         ui.toggleExplorer();
@@ -180,6 +184,7 @@ export default function App() {
 
       <StatusBar />
 
+      <ProjectSwitcher />
       <PromptDialog />
       <ConfirmDialog />
       <ShortcutsDialog />
