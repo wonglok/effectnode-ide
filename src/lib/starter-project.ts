@@ -2,11 +2,11 @@
  * The project that lives inside almostnode's virtual file system the first time
  * the IDE is opened.
  *
- * The sources are stored in `src/assets/starter-files.zip`, with the project
- * root at the archive root (`package.json`, `src/...`, `public/...`). Loading
- * the zip at runtime keeps the starter out of the main JavaScript bundle while
- * preserving its folder structure, including the binary public assets that
- * used to need separate `?url` imports.
+ * The sources are stored in `public/samples/starter-files.zip`, with the
+ * project root at the archive root (`package.json`, `src/...`, `public/...`).
+ * Loading the zip at runtime keeps the starter out of the main JavaScript
+ * bundle while preserving its folder structure, including the binary public
+ * assets that used to need separate `?url` imports.
  *
  * The starter is a six-chapter, scroll-driven landing page for MY COMPANY:
  * a Zustand scroll store, a chapter timeline, and one canvas that draws every
@@ -15,7 +15,9 @@
  * maps React/Zustand to esm.sh.
  */
 import { unzipSync } from 'fflate';
-import starterZipUrl from '../assets/starter-files.zip?url';
+
+/** Vite serves `public/` from the site root in dev and copies it on build. */
+const STARTER_ZIP_URL = `${import.meta.env.BASE_URL}samples/starter-files.zip`;
 
 export const STARTER_PROJECT_NAME = 'MY COMPANY';
 
@@ -107,7 +109,7 @@ let starterPromise: Promise<StarterBundle> | null = null;
 /** Fetch and unpack the starter once, then reuse the decoded contents. */
 export function loadStarter(): Promise<StarterBundle> {
   starterPromise ??= (async () => {
-    const response = await fetch(starterZipUrl);
+    const response = await fetch(STARTER_ZIP_URL);
     if (!response.ok) {
       throw new Error(
         `Could not load the starter archive (HTTP ${response.status})`

@@ -32,14 +32,14 @@ function almostnodeServiceWorker(): Plugin {
 }
 
 /**
- * Serve the starter archive in dev. Its `?url` import resolves to the source
- * path, but Nitro's SPA fallback answers non-module requests with index.html
- * before Vite's static middleware sees them. This middleware is registered
- * ahead of Nitro (plugin order) so the browser receives the zip bytes.
+ * Serve the starter archive from `public/` in dev. Nitro's SPA fallback
+ * answers non-module requests with index.html before Vite's static middleware
+ * sees them, so this middleware is registered ahead of Nitro (plugin order)
+ * to deliver the zip bytes.
  */
 function starterArchive(): Plugin {
-  const file = path.resolve(root, "src/assets/starter-files.zip");
-  const archivePath = "/src/assets/starter-files.zip";
+  const file = path.resolve(root, "public/samples/starter-files.zip");
+  const archivePath = "/samples/starter-files.zip";
 
   return {
     name: "forge:starter-archive",
@@ -47,21 +47,8 @@ function starterArchive(): Plugin {
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
         if (req.method !== "GET" && req.method !== "HEAD") return next();
-        const [pathname, query = ""] = (req.url ?? "").split("?");
+        const [pathname] = (req.url ?? "").split("?");
         if (pathname !== archivePath) return next();
-
-        // Vite asks for `?url` transforms as JS modules; leave those to the
-        // transform pipeline and only serve the raw bytes otherwise.
-        const params = new URLSearchParams(query);
-        if (
-          params.has("url") ||
-          params.has("raw") ||
-          params.has("inline") ||
-          params.has("import") ||
-          params.has("worker")
-        ) {
-          return next();
-        }
 
         if (!fs.existsSync(file) || !fs.statSync(file).isFile()) return next();
 
