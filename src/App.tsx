@@ -140,30 +140,40 @@ export default function App() {
         {explorerOpen ? <FileExplorer /> : null}
 
         <main className="stage" ref={stageRef}>
-          <section className="editing" ref={editingRef}>
-            <div className="code-column">
-              <EditorPane />
-              {terminalOpen ? (
+          <section
+            className={explorerOpen ? 'editing' : 'editing is-code-hidden'}
+            ref={editingRef}
+          >
+            {explorerOpen ? (
+              <>
+                <div className="code-column">
+                  <EditorPane />
+                  {terminalOpen ? (
+                    <div
+                      className="splitter splitter-horizontal"
+                      onPointerDown={startTerminalDrag}
+                      role="separator"
+                      aria-orientation="horizontal"
+                      title="Drag to resize the panel"
+                    />
+                  ) : null}
+                  {terminalOpen ? <TerminalPane height={terminalHeight} /> : null}
+                </div>
+
                 <div
-                  className="splitter splitter-horizontal"
-                  onPointerDown={startTerminalDrag}
+                  className="splitter splitter-vertical agent-splitter"
+                  onPointerDown={startAgentDrag}
                   role="separator"
-                  aria-orientation="horizontal"
-                  title="Drag to resize the panel"
+                  aria-orientation="vertical"
+                  title="Drag to resize the agent chat"
                 />
-              ) : null}
-              {terminalOpen ? <TerminalPane height={terminalHeight} /> : null}
-            </div>
+              </>
+            ) : null}
 
             <div
-              className="splitter splitter-vertical agent-splitter"
-              onPointerDown={startAgentDrag}
-              role="separator"
-              aria-orientation="vertical"
-              title="Drag to resize the agent chat"
-            />
-
-            <div className="agent-column" style={{ flexBasis: `${agentWidth}px` }}>
+              className="agent-column"
+              style={explorerOpen ? { flexBasis: `${agentWidth}px` } : undefined}
+            >
               <AgentPanel />
             </div>
           </section>

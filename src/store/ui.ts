@@ -81,7 +81,7 @@ const clamp = (value: number, min: number, max: number) =>
 export const useUiStore = create<UiState>()(
   persist(
     (set, get) => ({
-      explorerOpen: true,
+      explorerOpen: false,
       terminalOpen: true,
       terminalTab: "console",
       agentWidth: 380,
@@ -159,6 +159,13 @@ export const useUiStore = create<UiState>()(
     }),
     {
       name: "forge.ui",
+      // v2: the explorer + editor + terminal column starts collapsed.
+      version: 2,
+      migrate: (persisted, version) => {
+        const state = (persisted ?? {}) as Record<string, unknown>;
+        if (version < 2) state.explorerOpen = false;
+        return state as unknown as UiState;
+      },
       partialize: (state) => ({
         explorerOpen: state.explorerOpen,
         terminalOpen: state.terminalOpen,

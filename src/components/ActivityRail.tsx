@@ -7,7 +7,7 @@ export function ActivityRail() {
   const toggleExplorer = useUiStore((state) => state.toggleExplorer);
   const setShortcutsOpen = useUiStore((state) => state.setShortcutsOpen);
   const setProjectSwitcherOpen = useUiStore(
-    (state) => state.setProjectSwitcherOpen
+    (state) => state.setProjectSwitcherOpen,
   );
   const status = useRuntimeStore((state) => state.status);
 
@@ -26,7 +26,7 @@ export function ActivityRail() {
         <button
           className={`rail-button ${explorerOpen ? "is-active" : ""}`}
           onClick={toggleExplorer}
-          title="Explorer (⌘B)"
+          title="Toggle explorer & editor column (⌘B)"
         >
           <Files size={18} />
         </button>

@@ -187,6 +187,13 @@ code {
   border-left: 1px solid var(--line);
 }
 
+/* ⌘B collapses the explorer and the editor + terminal column together; the
+   agent chat takes the freed width beside the preview. */
+.editing.is-code-hidden .agent-column {
+  flex: 1 1 auto;
+  max-width: none;
+}
+
 .preview-slot {
   display: flex;
   flex-grow: 0;

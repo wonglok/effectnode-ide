@@ -151,7 +151,7 @@ export function ConfirmDialog() {
 
 const SHORTCUTS = [
   ['⇧⌘O', 'Projects & versions'],
-  ['⌘B', 'Toggle the file explorer'],
+  ['⌘B', 'Toggle the explorer + editor column'],
   ['⌘J', 'Toggle the console / terminal'],
   ['⇧⌘A', 'Focus the agent chat'],
   ['↑ / ↓', 'Navigate shell history'],
