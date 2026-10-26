@@ -52,6 +52,8 @@ export type AgentMessage =
       content: string;
       /** DeepSeek's separate `reasoning_content` stream for this step. */
       reasoning?: string;
+      /** Thinking is rendered in one block once the provider finishes it. */
+      reasoningDone?: boolean;
       streaming: boolean;
       at: number;
     }
@@ -418,6 +420,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
               role: "assistant",
               content: "",
               reasoning: "",
+              reasoningDone: false,
               streaming: true,
               at: Date.now(),
             },
@@ -440,13 +443,30 @@ export const useAgentStore = create<AgentState>((set, get) => {
                 : message,
             ),
           }));
-        } else if (update.type === "thinking_delta") {
-          const delta = update.delta;
-          streamedReasoning += delta;
+        } else if (update.type === "thinking_start") {
           set((current) => ({
             messages: current.messages.map((message) =>
               message.role === "assistant" && message.id === assistantId
-                ? { ...message, reasoning: (message.reasoning ?? "") + delta }
+                ? { ...message, reasoningDone: false }
+                : message,
+            ),
+          }));
+        } else if (update.type === "thinking_delta") {
+          // Buffer the tokens; the thinking block appears in one piece when
+          // the provider closes it, instead of re-rendering on every token.
+          streamedReasoning += update.delta;
+        } else if (update.type === "thinking_end") {
+          const thinking = update.content;
+          set((current) => ({
+            messages: current.messages.map((message) =>
+              message.role === "assistant" && message.id === assistantId
+                ? {
+                    ...message,
+                    reasoning: message.reasoning
+                      ? `${message.reasoning}\n${thinking}`
+                      : thinking,
+                    reasoningDone: true,
+                  }
                 : message,
             ),
           }));
@@ -485,6 +505,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
                 ...message,
                 content: finalText,
                 reasoning: finalThinking,
+                reasoningDone: true,
                 streaming: false,
               },
             ];

@@ -116,6 +116,7 @@ function normalizeMessages(value: unknown): AgentMessage[] {
         role: 'assistant',
         content: raw.content,
         reasoning: optionalString(raw.reasoning),
+        reasoningDone: true,
         // A reload must never leave an infinite typing indicator.
         streaming: false,
         at,

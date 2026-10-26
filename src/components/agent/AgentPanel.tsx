@@ -899,7 +899,7 @@ export function AgentPanel() {
                     <div className="agent-assistant">
                       <ThinkingLog
                         text={message.reasoning ?? ""}
-                        streaming={message.streaming}
+                        streaming={message.streaming && !message.reasoningDone}
                       />
                       {message.content ? (
                         <RichText text={message.content} />
