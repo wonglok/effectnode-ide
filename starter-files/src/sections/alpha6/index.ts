@@ -17,6 +17,7 @@ import {
   glowPlane,
   type ChapterWorld,
 } from "../shared.ts";
+import { createYoText } from "./yo-text.ts";
 
 /* ── 04 Alpha 6: glass shards lit by a fresnel rim ───────────────────────── */
 
@@ -98,14 +99,22 @@ export function buildAlpha(accent: string): ChapterWorld {
   glow.position.z = -3;
   group.add(glow);
 
+  // The shards ring this glass "Yo" instead of crossing it.
+  const yo = createYoText(accent);
+  group.add(yo.mount);
+
   const camera = createChapterCamera(5);
 
   return {
     group,
     camera,
+    resize(aspect) {
+      yo.fitToView(aspect);
+    },
     update(time, pointer, phase) {
       group.rotation.y = time * 0.045 + pointer.x * 0.16;
       group.rotation.x = pointer.y * 0.08;
+      yo.update(time, pointer, phase, group.rotation.y);
       shards.forEach(({ mesh, spin }, index) => {
         mesh.rotation.x += spin.x * 0.004;
         mesh.rotation.y += spin.y * 0.004;

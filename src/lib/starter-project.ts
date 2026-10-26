@@ -36,7 +36,10 @@ import kineticCenterTextTs from '../../starter-files/src/sections/kinetic/center
 import kineticHelveticaTs from '../../starter-files/src/sections/kinetic/helvetica.ts?raw';
 import apartmentSceneTs from '../../starter-files/src/sections/apartment/index.ts?raw';
 import liveEnvSceneTs from '../../starter-files/src/sections/live-env/index.ts?raw';
+import liveEnvHahaTextTs from '../../starter-files/src/sections/live-env/haha-text.ts?raw';
+import liveEnvOnePerSceneTs from '../../starter-files/src/sections/live-env/one-per-scene.ts?raw';
 import alpha6SceneTs from '../../starter-files/src/sections/alpha6/index.ts?raw';
+import alpha6YoTextTs from '../../starter-files/src/sections/alpha6/yo-text.ts?raw';
 // `.glb`/`.hdr` are registered in Vite's `assetsInclude`, so these resolve to
 // asset URLs in dev (served by Vite's asset middleware, ahead of Nitro's SPA
 // fallback) and to hashed files in the production build.
@@ -82,7 +85,10 @@ export const STARTER_FILES: Record<string, string> = {
   '/src/sections/kinetic/helvetica.ts': kineticHelveticaTs,
   '/src/sections/apartment/index.ts': apartmentSceneTs,
   '/src/sections/live-env/index.ts': liveEnvSceneTs,
+  '/src/sections/live-env/haha-text.ts': liveEnvHahaTextTs,
+  '/src/sections/live-env/one-per-scene.ts': liveEnvOnePerSceneTs,
   '/src/sections/alpha6/index.ts': alpha6SceneTs,
+  '/src/sections/alpha6/yo-text.ts': alpha6YoTextTs,
   '/src/lib/scroll-phases.ts': scrollPhasesTs,
   '/src/lib/render-pipeline.ts': renderPipelineTs,
   '/src/transitions/index.ts': transitionIndexTs,
