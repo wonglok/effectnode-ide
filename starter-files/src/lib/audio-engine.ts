@@ -1,6 +1,7 @@
 /**
- * Small WebAudio engine. There are no audio files in this starter: the click
- * and the ambient pad are synthesised, so the page stays self-contained.
+ * Small WebAudio engine. There are no audio files in this starter: the
+ * per-chapter entrance cues and the ambient pad are synthesised, so the page
+ * stays self-contained.
  *
  * Browsers only allow audio after a gesture, so Landing calls `start()` on the
  * first pointerdown. Until then every method is a no-op.
@@ -103,7 +104,7 @@ class AudioEngine {
     this.soundFx = enabled;
   }
 
-  /** Short, quiet confirmation when the visitor navigates a chapter. */
+  /** Short, quiet confirmation used by explicit preview actions. */
   playUiClick() {
     if (!this.context || !this.master || !this.soundFx) return;
     const context = this.context;
@@ -123,6 +124,196 @@ class AudioEngine {
     gain.connect(this.master);
     oscillator.start(now);
     oscillator.stop(now + 0.16);
+  }
+
+  /** One synthesized envelope per note; timbre comes from type + filter. */
+  private tone(options: {
+    frequency: number;
+    to?: number;
+    at?: number;
+    duration?: number;
+    gain?: number;
+    type?: OscillatorType;
+    detune?: number;
+    filterFrom?: number;
+    filterTo?: number;
+  }) {
+    if (!this.context || !this.master) return;
+    const context = this.context;
+    const {
+      frequency,
+      to,
+      at = 0,
+      duration = 0.7,
+      gain: peak = 0.05,
+      type = 'sine',
+      detune = 0,
+      filterFrom,
+      filterTo,
+    } = options;
+    const start = context.currentTime + at;
+
+    const oscillator = context.createOscillator();
+    oscillator.type = type;
+    oscillator.frequency.setValueAtTime(frequency, start);
+    if (to !== undefined) {
+      oscillator.frequency.exponentialRampToValueAtTime(
+        Math.max(20, to),
+        start + duration * 0.8
+      );
+    }
+    oscillator.detune.value = detune;
+
+    const gain = context.createGain();
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(peak, start + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+
+    oscillator.connect(gain);
+    if (filterFrom !== undefined) {
+      const filter = context.createBiquadFilter();
+      filter.type = 'lowpass';
+      filter.Q.value = 0.8;
+      filter.frequency.setValueAtTime(filterFrom, start);
+      filter.frequency.exponentialRampToValueAtTime(
+        filterTo ?? filterFrom,
+        start + duration * 0.9
+      );
+      gain.connect(filter);
+      filter.connect(this.master);
+    } else {
+      gain.connect(this.master);
+    }
+
+    oscillator.start(start);
+    oscillator.stop(start + duration + 0.05);
+  }
+
+  /** Filtered noise burst for airy, less tonal cues. */
+  private noise(options: {
+    at?: number;
+    duration?: number;
+    gain?: number;
+    from: number;
+    to: number;
+    q?: number;
+  }) {
+    if (!this.context || !this.master) return;
+    const context = this.context;
+    const { at = 0, duration = 0.8, gain: peak = 0.03, from, to, q = 1.2 } =
+      options;
+    const start = context.currentTime + at;
+
+    const buffer = context.createBuffer(
+      1,
+      Math.ceil(context.sampleRate * duration),
+      context.sampleRate
+    );
+    const data = buffer.getChannelData(0);
+    for (let index = 0; index < data.length; index += 1) {
+      data[index] = Math.random() * 2 - 1;
+    }
+
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+
+    const filter = context.createBiquadFilter();
+    filter.type = 'bandpass';
+    filter.Q.value = q;
+    filter.frequency.setValueAtTime(from, start);
+    filter.frequency.exponentialRampToValueAtTime(to, start + duration);
+
+    const gain = context.createGain();
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(peak, start + duration * 0.35);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+
+    source.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.master);
+    source.start(start);
+    source.stop(start + duration + 0.05);
+  }
+
+  /**
+   * A distinct synthesized signature for each chapter, played when that
+   * chapter becomes the active scene. Quiet and short: a cue, not a fanfare.
+   */
+  playSceneEntrance(index: number) {
+    if (!this.context || !this.master || !this.soundFx) return;
+
+    switch (index) {
+      case 0:
+        // Soft Room — a warm major third in the sunlit room.
+        this.tone({ frequency: 261.63, duration: 0.7, gain: 0.028 });
+        this.tone({
+          frequency: 523.25,
+          duration: 0.8,
+          gain: 0.05,
+          type: "triangle",
+        });
+        this.tone({ frequency: 659.25, at: 0.07, duration: 0.9, gain: 0.038 });
+        break;
+      case 1:
+        // Force Shield — a charged sweep opening into a bright shimmer.
+        this.tone({
+          frequency: 140,
+          to: 340,
+          duration: 0.5,
+          gain: 0.045,
+          type: "sawtooth",
+          filterFrom: 700,
+          filterTo: 2600,
+        });
+        this.tone({ frequency: 1200, at: 0.1, duration: 0.45, gain: 0.02 });
+        break;
+      case 2:
+        // Kinetic — a quick three-note sparkle.
+        [880, 1174.66, 1567.98].forEach((frequency, note) =>
+          this.tone({
+            frequency,
+            at: note * 0.06,
+            duration: 0.28,
+            gain: 0.03,
+            type: "triangle",
+          })
+        );
+        break;
+      case 3:
+        // Apartment — woody marimba notes over a soft room thump.
+        this.tone({ frequency: 98, to: 62, duration: 0.3, gain: 0.038 });
+        this.tone({
+          frequency: 392,
+          duration: 0.35,
+          gain: 0.048,
+          type: "triangle",
+        });
+        this.tone({
+          frequency: 587.33,
+          at: 0.085,
+          duration: 0.5,
+          gain: 0.036,
+          type: "triangle",
+        });
+        break;
+      case 4:
+        // Live Env — an airy swell over a low city hum.
+        this.noise({ duration: 0.9, gain: 0.032, from: 320, to: 2200, q: 0.7 });
+        this.tone({ frequency: 146.83, duration: 0.9, gain: 0.034 });
+        break;
+      default:
+        // Alpha 6 — a crystalline bell cluster, slightly detuned.
+        this.tone({ frequency: 1046.5, duration: 1.1, gain: 0.032, detune: -6 });
+        this.tone({
+          frequency: 1567.98,
+          at: 0.05,
+          duration: 0.9,
+          gain: 0.024,
+          detune: 8,
+        });
+        this.tone({ frequency: 2093, at: 0.12, duration: 0.7, gain: 0.016 });
+        break;
+    }
   }
 
   dispose() {

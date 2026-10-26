@@ -44,6 +44,11 @@ import apartmentGlbUrl from '../../starter-files/public/apartment.glb?url';
 import studioHdrUrl from '../../starter-files/public/studio.hdr?url';
 import scrollPhasesTs from '../../starter-files/src/lib/scroll-phases.ts?raw';
 import renderPipelineTs from '../../starter-files/src/lib/render-pipeline.ts?raw';
+import transitionIndexTs from '../../starter-files/src/transitions/index.ts?raw';
+import transitionTypesTs from '../../starter-files/src/transitions/types.ts?raw';
+import transitionLiquidTs from '../../starter-files/src/transitions/liquid.ts?raw';
+import transitionPageCurlTs from '../../starter-files/src/transitions/page-curl.ts?raw';
+import transitionCrossZoomTs from '../../starter-files/src/transitions/cross-zoom.ts?raw';
 import audioEngineTs from '../../starter-files/src/lib/audio-engine.ts?raw';
 import scrollerStoreTs from '../../starter-files/src/store/useScrollerStore.ts?raw';
 import landingTsx from '../../starter-files/src/components/Landing.tsx?raw';
@@ -80,6 +85,11 @@ export const STARTER_FILES: Record<string, string> = {
   '/src/sections/alpha6/index.ts': alpha6SceneTs,
   '/src/lib/scroll-phases.ts': scrollPhasesTs,
   '/src/lib/render-pipeline.ts': renderPipelineTs,
+  '/src/transitions/index.ts': transitionIndexTs,
+  '/src/transitions/types.ts': transitionTypesTs,
+  '/src/transitions/liquid.ts': transitionLiquidTs,
+  '/src/transitions/page-curl.ts': transitionPageCurlTs,
+  '/src/transitions/cross-zoom.ts': transitionCrossZoomTs,
   '/src/lib/audio-engine.ts': audioEngineTs,
   '/src/store/useScrollerStore.ts': scrollerStoreTs,
   '/src/components/Landing.tsx': landingTsx,

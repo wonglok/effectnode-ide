@@ -70,7 +70,10 @@ and external coding agents should follow these rules when changing the project.
 - `src/sections/live-env/` — chapter 5 scene.
 - `src/sections/alpha6/` — chapter 6 scene.
 - `src/sections/shared.ts` — shared chapter types and TSL scene helpers.
-- `src/lib/render-pipeline.ts` — pass composition and shader transitions.
+- `src/lib/render-pipeline.ts` — pass composition and the shared finish pass.
+- `src/transitions/` — one TSL handoff per file (`liquid.ts`, `page-curl.ts`,
+  `cross-zoom.ts`). `index.ts` maps chapter pairs to transitions; `types.ts`
+  holds the shared context. Add new handoffs there, not in the compositor.
 - `src/store/useScrollerStore.ts` — Zustand scroll engine and chapter state.
 - `src/components/StoryRouter.tsx` — hash route and active-chapter bridge.
 - `src/sections/registry.ts` — chapter metadata; order matters.

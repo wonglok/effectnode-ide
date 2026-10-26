@@ -74,11 +74,15 @@ the active chapter (`#/scene-02`), and reloading resumes at that chapter.
   `RenderPipeline`, or blends the outgoing and incoming passes with a TSL
   transition chosen per chapter pair. A shared finish adds the vignette and
   animated film grain, and every handoff is prewarmed during the splash.
+- `src/transitions/` — one file per handoff. `liquid.ts` is the default wipe;
+  `page-curl.ts` covers 03→04 and `cross-zoom.ts` covers 04→05. `index.ts`
+  maps pairs to transitions and `types.ts` defines the shared context.
 - `src/components/Landing.tsx` — the fixed chrome: header, progress line,
   numbered HUD, scroll cue, and footer.
 - `src/components/SplashScreen.tsx` — boot overlay; it leaves once the canvas
   has painted its first frames.
-- `src/lib/audio-engine.ts` — synthesised click and ambient pad (no audio files).
+- `src/lib/audio-engine.ts` — a synthesised entrance cue per chapter and the
+  ambient pad (no audio files). The right-hand scene switcher itself is silent.
 - `src/sections/registry.ts` — the six chapters: metadata, accents, surfaces.
 
 ## Styling

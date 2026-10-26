@@ -108,6 +108,14 @@ const engine: ScrollEngine =
     : ((window as unknown as { __myCompanyScroll?: ScrollEngine })
         .__myCompanyScroll ??= createScrollEngine());
 
+/** Last chapter that announced itself; avoids replaying a cue every frame. */
+let lastCueIndex = -1;
+/**
+ * Destination of a programmatic jump. Chapters crossed on the way stay silent
+ * so a long jump plays one entrance cue instead of a cascade.
+ */
+let cueTargetIndex: number | null = null;
+
 const SCROLL_FRICTION = 4;
 const WHEEL_INERTIA = 4;
 const WHEEL_GAIN = 0.35;
@@ -291,6 +299,18 @@ function createScrollerStore() {
       const isTransitioning = blend > 0.002 && blend < 0.998;
       const activeIndex = blend < 0.5 ? lower : toIndex;
 
+      // Each chapter announces itself as it becomes active. When a jump has a
+      // known destination, chapters passed on the way stay silent so the cue
+      // belongs to the place the visitor chose.
+      if (activeIndex !== lastCueIndex) {
+        const jumpTarget = cueTargetIndex;
+        if (jumpTarget === null || activeIndex === jumpTarget) {
+          lastCueIndex = activeIndex;
+          if (activeIndex === jumpTarget) cueTargetIndex = null;
+          audioEngine.playSceneEntrance(activeIndex);
+        }
+      }
+
       if (!isTransitioning) {
         set({
           scrollProgress,
@@ -318,15 +338,16 @@ function createScrollerStore() {
       set({ preloadProgress: clamp01(preloadProgress) }),
 
     goTo: (index, options) => {
-      audioEngine.playUiClick();
-      scrollVirtualTo(
-        getChapterAnchor(Math.max(0, Math.min(SECTION_COUNT - 1, index))),
-        options
-      );
+      // Navigation itself is silent; only the destination chapter announces
+      // itself. Chapters on the way are skipped by the cue gate in setScroll.
+      const safe = Math.max(0, Math.min(SECTION_COUNT - 1, index));
+      cueTargetIndex = safe;
+      scrollVirtualTo(getChapterAnchor(safe), options);
     },
 
     jumpTo: (index) => {
       const safe = Math.max(0, Math.min(SECTION_COUNT - 1, Math.round(index)));
+      cueTargetIndex = null;
       if (engine.pixelsPerSection <= 1) {
         engine.pixelsPerSection = measureSectionPixels();
       }
@@ -339,6 +360,7 @@ function createScrollerStore() {
     },
 
     previewTransition: (index) => {
+      cueTargetIndex = null;
       audioEngine.playUiClick();
       playTransitionPreview(index);
     },
@@ -394,6 +416,9 @@ export function trackPageScroll() {
   const onWheel = (event: WheelEvent) => {
     if (event.ctrlKey) return;
     event.preventDefault();
+    // Manual scrolling cancels any pending jump destination so every chapter
+    // that becomes active announces itself.
+    cueTargetIndex = null;
     const pixels =
       event.deltaY *
       (event.deltaMode === 1
@@ -414,6 +439,7 @@ export function trackPageScroll() {
   let touchVelocity = 0;
 
   const onTouchStart = (event: TouchEvent) => {
+    cueTargetIndex = null;
     touchY = event.touches.length === 1 ? event.touches[0].clientY : null;
     touchTime = performance.now();
     touchVelocity = 0;
