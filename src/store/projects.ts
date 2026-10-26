@@ -12,7 +12,7 @@ import {
 } from '@/lib/opfs';
 import { loadProjectAssets } from '@/lib/project-assets';
 import { runtime } from '@/lib/runtime';
-import { STARTER_FILES, STARTER_PROJECT_NAME } from '@/lib/starter-project';
+import { loadStarterFiles, STARTER_PROJECT_NAME } from '@/lib/starter-project';
 import {
   flushAgentStatePersistence,
   pauseAgentStatePersistence,
@@ -132,6 +132,9 @@ export const useProjectStore = create<ProjectState>((set) => ({
   },
 
   newProject: async (name) => {
+    // Load the archive before pausing persistence so a failed fetch leaves the
+    // current project untouched.
+    const files = await loadStarterFiles();
     flushAgentStatePersistence();
     pauseAgentStatePersistence();
     useWorkspaceStore.getState().flush();
@@ -140,11 +143,8 @@ export const useProjectStore = create<ProjectState>((set) => ({
     localStorage.setItem(CURRENT_PROJECT_KEY, local.id);
     bindOpfsProject(local.id, local.name);
     // replaceProject mirrors the starter files into the new OPFS folder.
-    await restartWithFiles(
-      STARTER_FILES,
-      await loadProjectAssets(STARTER_FILES, local.id)
-    );
-    useWorkspaceStore.getState().loadFiles(STARTER_FILES);
+    await restartWithFiles(files, await loadProjectAssets(files, local.id));
+    useWorkspaceStore.getState().loadFiles(files);
     set({
       id: local.id,
       name: local.name,

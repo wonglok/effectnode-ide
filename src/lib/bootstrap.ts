@@ -14,7 +14,7 @@ import {
 } from './opfs';
 import { loadProjectAssets } from './project-assets';
 import { runtime } from './runtime';
-import { STARTER_FILES, STARTER_PROJECT_NAME } from './starter-project';
+import { loadStarterFiles, STARTER_PROJECT_NAME } from './starter-project';
 
 let bootstrapPromise: Promise<void> | null = null;
 
@@ -122,6 +122,7 @@ async function run(): Promise<void> {
     }
   }
 
+  const files = await loadStarterFiles();
   const starter = createLocalProject(STARTER_PROJECT_NAME);
-  await hydrate(STARTER_FILES, starter, true);
+  await hydrate(files, starter, true);
 }

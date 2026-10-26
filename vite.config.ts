@@ -32,29 +32,26 @@ function almostnodeServiceWorker(): Plugin {
 }
 
 /**
- * Serve the starter's binary public files in dev. Their `?url` imports point
- * at the source path, but Nitro's SPA fallback answers non-module requests
- * with index.html before Vite's static middleware sees them. This middleware
- * is registered ahead of Nitro (plugin order) so the browser receives bytes.
+ * Serve the starter archive in dev. Its `?url` import resolves to the source
+ * path, but Nitro's SPA fallback answers non-module requests with index.html
+ * before Vite's static middleware sees them. This middleware is registered
+ * ahead of Nitro (plugin order) so the browser receives the zip bytes.
  */
-function starterAssets(): Plugin {
-  const dir = path.resolve(root, 'starter-files/public');
-  const types: Record<string, string> = {
-    '.glb': 'model/gltf-binary',
-    '.hdr': 'application/octet-stream',
-  };
+function starterArchive(): Plugin {
+  const file = path.resolve(root, 'src/assets/starter-files.zip');
+  const archivePath = '/src/assets/starter-files.zip';
 
   return {
-    name: 'forge:starter-assets',
+    name: 'forge:starter-archive',
     apply: 'serve',
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
         if (req.method !== 'GET' && req.method !== 'HEAD') return next();
         const [pathname, query = ''] = (req.url ?? '').split('?');
-        if (!pathname.startsWith('/starter-files/public/')) return next();
+        if (pathname !== archivePath) return next();
 
-        // Vite asks for `?url` / `?raw` transforms as JS modules; leave those
-        // to the transform pipeline and only serve the raw bytes otherwise.
+        // Vite asks for `?url` transforms as JS modules; leave those to the
+        // transform pipeline and only serve the raw bytes otherwise.
         const params = new URLSearchParams(query);
         if (
           params.has('url') ||
@@ -66,14 +63,9 @@ function starterAssets(): Plugin {
           return next();
         }
 
-        const file = path.resolve(root, decodeURIComponent(pathname.slice(1)));
-        if (!file.startsWith(dir + path.sep)) return next();
         if (!fs.existsSync(file) || !fs.statSync(file).isFile()) return next();
 
-        res.setHeader(
-          'Content-Type',
-          types[path.extname(file)] ?? 'application/octet-stream'
-        );
+        res.setHeader('Content-Type', 'application/zip');
         res.setHeader('Content-Length', String(fs.statSync(file).size));
         res.setHeader('Cache-Control', 'no-cache');
         if (req.method === 'HEAD') {
@@ -139,15 +131,11 @@ export default defineConfig({
     almostnodePlugin(),
     react(),
     tailwindcss(),
-    starterAssets(),
+    starterArchive(),
     nitro(),
     almostnodeServiceWorker(),
     almostnodeWorkerPatch(),
   ],
-  // Starter binaries live in `starter-files/public`. Vite has to treat them as
-  // assets (not modules) so `?url` imports resolve and the dev server serves
-  // the real bytes instead of the SPA fallback HTML.
-  assetsInclude: ['**/*.glb', '**/*.hdr'],
   resolve: {
     alias: {
       '@': path.resolve(root, 'src'),
