@@ -2,11 +2,11 @@
  * The project that lives inside almostnode's virtual file system the first time
  * the IDE is opened.
  *
- * The sources are stored in `public/samples/starter-files.zip`, with the
- * project root at the archive root (`package.json`, `src/...`, `public/...`).
- * Loading the zip at runtime keeps the starter out of the main JavaScript
- * bundle while preserving its folder structure, including the binary public
- * assets that used to need separate `?url` imports.
+ * The sources are stored in `public/starter/template-001.zip`. The archive is
+ * a Forge project export: `forge.manifest.json` names the project folder
+ * (`template-001/`), which holds `package.json`, `src/...`, and any `public/`
+ * binaries. Loading the zip at runtime keeps the template out of the main
+ * JavaScript bundle while preserving its folder structure.
  *
  * The starter is a six-chapter, scroll-driven landing page for MY COMPANY:
  * a Zustand scroll store, a chapter timeline, and one canvas that draws every
@@ -17,7 +17,11 @@
 import { unzipSync } from 'fflate';
 
 /** Vite serves `public/` from the site root in dev and copies it on build. */
-const STARTER_ZIP_URL = `${import.meta.env.BASE_URL}samples/starter-files.zip`;
+const STARTER_ZIP_URL = `${import.meta.env.BASE_URL}starter/template-001.zip`;
+
+const MANIFEST_FILENAME = 'forge.manifest.json';
+const AGENT_STATE_FILENAME = 'agent-state.json';
+const ROOT_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
 export const STARTER_PROJECT_NAME = 'MY COMPANY';
 
@@ -72,6 +76,40 @@ function extensionOf(path: string): string {
   return dot <= 0 ? '' : name.slice(dot + 1).toLowerCase();
 }
 
+/**
+ * Forge exports live under a manifest-named folder. A plain folder zip (no
+ * manifest) is also accepted when it has the project files at the root.
+ */
+function archiveRoot(entries: Record<string, Uint8Array>): string {
+  const manifestBytes = entries[MANIFEST_FILENAME];
+  if (!manifestBytes) return '';
+
+  let root: unknown;
+  try {
+    const manifest = JSON.parse(new TextDecoder().decode(manifestBytes)) as {
+      root?: unknown;
+    };
+    root = manifest.root;
+  } catch {
+    throw new Error('The starter template has an unreadable manifest.');
+  }
+
+  if (typeof root !== 'string' || !ROOT_PATTERN.test(root)) {
+    throw new Error('The starter template has an invalid project folder.');
+  }
+  return `${root}/`;
+}
+
+function isSafeRelativePath(path: string): boolean {
+  return (
+    path.length > 0 &&
+    !path.startsWith('/') &&
+    !path.includes('\\') &&
+    !path.includes('\0') &&
+    path.split('/').every((segment) => segment && segment !== '.' && segment !== '..')
+  );
+}
+
 /** Split the archive into editable text files and binary public assets. */
 function readStarterZip(archive: Uint8Array): StarterBundle {
   const entries = unzipSync(archive, {
@@ -80,16 +118,22 @@ function readStarterZip(archive: Uint8Array): StarterBundle {
       !file.name.startsWith('__MACOSX/') &&
       !file.name.endsWith('.DS_Store'),
   });
+  const root = archiveRoot(entries);
   const decoder = new TextDecoder('utf-8', { fatal: true });
   const files: Record<string, string> = {};
   const assets: Record<string, Uint8Array> = {};
 
   for (const [name, bytes] of Object.entries(entries)) {
-    // Zip entry names are untrusted input; keep them inside the project root.
-    if (!name || name.startsWith('/') || name.includes('../')) continue;
-    const path = `/${name}`;
+    if (name === MANIFEST_FILENAME) continue;
+    if (root && !name.startsWith(root)) continue;
 
-    if (!BINARY_EXTENSIONS.has(extensionOf(name))) {
+    const relative = root ? name.slice(root.length) : name;
+    // The transcript belongs to the archive, not to a fresh project.
+    if (!root && relative === AGENT_STATE_FILENAME) continue;
+    if (!isSafeRelativePath(relative)) continue;
+
+    const path = `/${relative}`;
+    if (!BINARY_EXTENSIONS.has(extensionOf(relative))) {
       try {
         files[path] = decoder.decode(bytes);
         continue;
@@ -112,7 +156,7 @@ export function loadStarter(): Promise<StarterBundle> {
     const response = await fetch(STARTER_ZIP_URL);
     if (!response.ok) {
       throw new Error(
-        `Could not load the starter archive (HTTP ${response.status})`
+        `Could not load the starter template (HTTP ${response.status})`
       );
     }
     return readStarterZip(new Uint8Array(await response.arrayBuffer()));
