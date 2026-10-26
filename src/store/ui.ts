@@ -44,6 +44,8 @@ interface UiState {
   terminalTab: TerminalTab;
   agentWidth: number;
   previewRatio: number;
+  /** Preview share of the stage when only the chat column is open. */
+  chatOnlyPreviewRatio: number;
   terminalHeight: number;
   shortcutsOpen: boolean;
   projectSwitcherOpen: boolean;
@@ -65,6 +67,7 @@ interface UiState {
   setTerminalTab: (tab: TerminalTab) => void;
   setAgentWidth: (width: number) => void;
   setPreviewRatio: (ratio: number) => void;
+  setChatOnlyPreviewRatio: (ratio: number) => void;
   setTerminalHeight: (height: number) => void;
   setShortcutsOpen: (open: boolean) => void;
   setProjectSwitcherOpen: (open: boolean) => void;
@@ -90,6 +93,7 @@ export const useUiStore = create<UiState>()(
       terminalTab: "console",
       agentWidth: 380,
       previewRatio: 0.42,
+      chatOnlyPreviewRatio: 0.725,
       terminalHeight: 176,
       shortcutsOpen: false,
       projectSwitcherOpen: false,
@@ -133,6 +137,8 @@ export const useUiStore = create<UiState>()(
         set({ agentWidth: clamp(width, 280, 560) }),
       setPreviewRatio: (ratio) =>
         set({ previewRatio: clamp(ratio, 0.24, 0.72) }),
+      setChatOnlyPreviewRatio: (ratio) =>
+        set({ chatOnlyPreviewRatio: clamp(ratio, 0.4, 0.85) }),
       setTerminalHeight: (height) =>
         set({ terminalHeight: clamp(height, 110, 420) }),
       setShortcutsOpen: (open) => set({ shortcutsOpen: open }),
@@ -166,10 +172,16 @@ export const useUiStore = create<UiState>()(
     {
       name: "forge.ui",
       // v2: the explorer + editor + terminal column starts collapsed.
-      version: 2,
+      // v3: the default open view is chat-only, chat at ~27.5% width.
+      version: 3,
       migrate: (persisted, version) => {
         const state = (persisted ?? {}) as Record<string, unknown>;
         if (version < 2) state.explorerOpen = false;
+        if (version < 3) {
+          state.explorerOpen = false;
+          state.chatOpen = true;
+          state.chatOnlyPreviewRatio = 0.725;
+        }
         return state as unknown as UiState;
       },
       partialize: (state) => ({
@@ -179,6 +191,7 @@ export const useUiStore = create<UiState>()(
         terminalTab: state.terminalTab,
         agentWidth: state.agentWidth,
         previewRatio: state.previewRatio,
+        chatOnlyPreviewRatio: state.chatOnlyPreviewRatio,
         terminalHeight: state.terminalHeight,
       }),
     },

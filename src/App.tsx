@@ -25,14 +25,24 @@ export default function App() {
   const terminalOpen = useUiStore((state) => state.terminalOpen);
   const agentWidth = useUiStore((state) => state.agentWidth);
   const previewRatio = useUiStore((state) => state.previewRatio);
+  const chatOnlyPreviewRatio = useUiStore(
+    (state) => state.chatOnlyPreviewRatio
+  );
   const terminalHeight = useUiStore((state) => state.terminalHeight);
   const setPreviewRatio = useUiStore((state) => state.setPreviewRatio);
+  const setChatOnlyPreviewRatio = useUiStore(
+    (state) => state.setChatOnlyPreviewRatio
+  );
   const setTerminalHeight = useUiStore((state) => state.setTerminalHeight);
   const setAgentWidth = useUiStore((state) => state.setAgentWidth);
   const name = useProjectStore((state) => state.name);
 
   const stageRef = useRef<HTMLElement>(null);
   const editingRef = useRef<HTMLElement>(null);
+
+  // Chat-only mode: no explorer/editor, so chat keeps its own ~27.5% share and
+  // the preview owns the rest of the stage.
+  const chatOnly = !explorerOpen && chatOpen;
 
   useEffect(() => {
     void bootstrap();
@@ -83,8 +93,9 @@ export default function App() {
     const rect = stage.getBoundingClientRect();
     document.body.classList.add('is-resizing');
 
+    const applyRatio = chatOnly ? setChatOnlyPreviewRatio : setPreviewRatio;
     const move = (moveEvent: PointerEvent) => {
-      setPreviewRatio((rect.right - moveEvent.clientX) / rect.width);
+      applyRatio((rect.right - moveEvent.clientX) / rect.width);
     };
     const stop = () => {
       document.body.classList.remove('is-resizing');
@@ -208,7 +219,9 @@ export default function App() {
             className="preview-slot"
             style={{
               flexBasis:
-                explorerOpen || chatOpen ? `${previewRatio * 100}%` : '100%',
+                explorerOpen || chatOpen
+                  ? `${(chatOnly ? chatOnlyPreviewRatio : previewRatio) * 100}%`
+                  : '100%',
             }}
           >
             <RightDock />
