@@ -8,9 +8,10 @@
  * any `public/` binaries. Loading a zip on demand keeps the templates out of
  * the main JavaScript bundle while preserving their folder structure.
  *
- * Both starters are six-chapter, scroll-driven landing pages with a Zustand
- * store, a chapter timeline, and a canvas that draws every scene. The movie
- * variant adds movie controls, a final-movie section, and a video asset.
+ * Both starters are scroll-driven landing pages with a Zustand store, a chapter
+ * timeline, and a canvas that draws every scene. The movie variant is its own
+ * five-chapter cut: it opens on the kinetic title, plays the Alpha 6 movie
+ * second, and adds movie controls, a final-movie section, and a video asset.
  */
 import { unzipSync } from 'fflate';
 import { classifyFile } from './binary-file';
@@ -53,7 +54,7 @@ export const STARTER_TEMPLATES: readonly StarterTemplate[] = [
     id: 'movie',
     label: 'Movie',
     description:
-      'The same story with movie controls, a final-movie clip and motion transitions.',
+      'A five-chapter cut that opens on the kinetic title, with movie controls, a final-movie clip and motion transitions.',
     meta: '43 files · 4 public assets',
     url: `${STARTER_BASE_URL}movie-template.zip`,
   },
