@@ -5,13 +5,13 @@ import {
   readBody,
   type H3Event,
 } from 'h3';
-import { PI_AGENT, PI_ANTHROPIC_UPSTREAM } from '../../../../shared/pi';
+import { CLAUDE_AGENT, CLAUDE_ANTHROPIC_UPSTREAM } from '../../../../shared/agent';
 import { authGuardAny } from '../../../utils/auth';
 
 /**
- * Anthropic-style transport for the frontend Pi harness.
+ * Anthropic-style transport for the frontend Claude Messages harness.
  *
- *   browser (pi-ai + Forge JWT)
+ *   browser (@anthropic-ai/sdk + Forge JWT)
  *     → POST /api/anthropic/v1/messages
  *       → https://api.deepseek.com/anthropic/v1/messages
  *
@@ -37,7 +37,9 @@ function isLocalHostname(hostname: string): boolean {
 }
 
 function upstreamBaseUrl(): string {
-  const raw = (process.env.DEEPSEEK_ANTHROPIC_BASE_URL ?? PI_ANTHROPIC_UPSTREAM).trim();
+  const raw = (
+    process.env.DEEPSEEK_ANTHROPIC_BASE_URL ?? CLAUDE_ANTHROPIC_UPSTREAM
+  ).trim();
 
   let url: URL;
   try {
@@ -148,7 +150,7 @@ function validateBody(
     model:
       typeof request.model === 'string' && request.model.trim()
         ? request.model.trim()
-        : PI_AGENT.model,
+        : CLAUDE_AGENT.model,
   };
 }
 
@@ -200,7 +202,7 @@ export default defineEventHandler(async (event) => {
     accept: getHeader(event, 'accept') ?? 'text/event-stream',
     'anthropic-version': getHeader(event, 'anthropic-version') ?? '2023-06-01',
     'x-api-key': key,
-    'user-agent': 'forge-sandbox-ide/pi-transport',
+    'user-agent': 'forge-sandbox-ide/claude-transport',
   };
   const beta = getHeader(event, 'anthropic-beta');
   if (beta) headers['anthropic-beta'] = beta;
@@ -220,7 +222,7 @@ export default defineEventHandler(async (event) => {
   } catch (error) {
     const aborted = controller.signal.aborted;
     console.warn(
-      `[pi-transport] upstream ${aborted ? 'timed out' : 'failed'}:`,
+      `[claude-transport] upstream ${aborted ? 'timed out' : 'failed'}:`,
       error instanceof Error ? error.message : String(error)
     );
     throw createError({
@@ -238,7 +240,7 @@ export default defineEventHandler(async (event) => {
     headers: {
       'content-type': contentType,
       'cache-control': 'no-store',
-      'x-forge-proxy': 'pi-anthropic-jwt',
+      'x-forge-proxy': 'claude-anthropic-jwt',
     },
   });
 });

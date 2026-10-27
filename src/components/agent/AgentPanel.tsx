@@ -499,7 +499,7 @@ function AgentLoader({ label }: { label: string }) {
       </svg>
       <span className="agent-loader-copy">
         <strong>{label || "Working…"}</strong>
-        <span>Pi agent harness · pi-agent-core · JWT auth</span>
+        <span>Claude agent harness · Anthropic Messages SDK · JWT proxy</span>
       </span>
       <span className="agent-loader-bars" aria-hidden="true">
         <i />
@@ -569,7 +569,7 @@ export function AgentPanel() {
   const statusLoaded = useAgentStore((state) => state.statusLoaded);
   const status = useAgentStore((state) => state.status);
   const model = status?.model ?? "";
-  const provider = status?.provider ?? "pi";
+  const provider = status?.provider ?? "anthropic";
   const configured = useAgentStore(selectAgentConfigured);
   const send = useAgentStore((state) => state.send);
   const stop = useAgentStore((state) => state.stop);
@@ -852,7 +852,10 @@ export function AgentPanel() {
         ) : null}
 
         <div className="agent-strip-actions">
-          <span className="agent-model-chip" title="Pi harness model">
+          <span
+            className="agent-model-chip"
+            title={`Claude harness model · all tools auto-approved · proxy ${status?.proxy ?? "/api/anthropic"}`}
+          >
             {model || "no model"}
           </span>
           <button
@@ -875,10 +878,10 @@ export function AgentPanel() {
               </div>
               <h3>Forge Agent</h3>
               <p>
-                I run in this tab on the Pi harness with tools against your
-                project, and the preview hot-reloads as I work. My model calls
-                go through the server's JWT-authenticated transport, so the API
-                key stays server-side.
+                I run in this tab on the Claude Messages harness with tools
+                against your project, and the preview hot-reloads as I work.
+                The official Anthropic SDK streams through the server's
+                JWT-authenticated transport, so the API key stays server-side.
               </p>
               <div className="agent-suggestions">
                 {SUGGESTIONS.map((suggestion) => (
@@ -898,9 +901,13 @@ export function AgentPanel() {
                   {provider}/{model}
                 </code>
                 <span>·</span>
+                <span>all tools auto-approved</span>
+                <span>·</span>
+                <span>proxy {status?.proxy ?? "/api/anthropic"}</span>
+                <span>·</span>
                 <span>
-                  pi-agent-core · tools: read · write · edit · list · shell ·
-                  plan
+                  claude-messages-sdk · tools: read · write · edit · list ·
+                  shell · plan
                 </span>
               </div>
             </div>
@@ -909,11 +916,11 @@ export function AgentPanel() {
               <div className="agent-welcome-mark">
                 <Sparkles size={20} />
               </div>
-              <h3>Connect the Pi harness</h3>
+              <h3>Connect the Claude agent</h3>
               <p>
-                The Pi harness runs in this tab and calls a same-origin JWT
-                route. The provider API key stays in the Nitro server
-                environment.
+                The Claude Messages harness runs in this tab through the
+                official Anthropic SDK and calls a same-origin JWT route. The
+                provider API key stays in the Nitro server environment.
               </p>
               <div className="agent-welcome-meta">
                 {statusLoaded ? (

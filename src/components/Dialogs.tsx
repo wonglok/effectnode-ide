@@ -321,18 +321,11 @@ const CREDIT_GROUPS: { label: string; items: Credit[] }[] = [
     label: 'Agent',
     items: [
       {
-        name: '@earendil-works/pi-agent-core',
-        version: '1.4.0',
-        license: 'MIT',
-        role: 'Agent loop and tool calls',
-        href: 'https://github.com/earendil-works/pi',
-      },
-      {
-        name: '@earendil-works/pi-ai',
-        version: '1.4.0',
-        license: 'MIT',
-        role: 'Model provider layer',
-        href: 'https://github.com/earendil-works/pi',
+        name: '@anthropic-ai/sdk',
+        version: '1.3.0',
+        license: 'Apache-2.0',
+        role: 'Browser agent loop and Messages API streaming',
+        href: 'https://github.com/anthropics/anthropic-sdk-typescript',
       },
     ],
   },

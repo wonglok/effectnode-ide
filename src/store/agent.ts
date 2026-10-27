@@ -5,14 +5,14 @@ import type {
   AgentTodoItem,
   AgentToolCall,
 } from "../../shared/types";
-import { autoCompactCharBudget, PI_AGENT } from "../../shared/pi";
+import { autoCompactCharBudget, CLAUDE_AGENT } from "../../shared/agent";
 import { fetchAgentStatus } from "@/lib/agent-client";
 import {
   readPersistedAgentState,
   serializeAgentState,
   writePersistedAgentState,
 } from "@/lib/agent-state";
-import { createPiSession } from "@/lib/pi-harness";
+import { createClaudeSession } from "@/lib/claude-harness";
 import { getBoundProjectId } from "@/lib/opfs";
 import { loadProjectAssets } from "@/lib/project-assets";
 import {
@@ -28,7 +28,7 @@ import { useRuntimeStore } from "./runtime";
 import { useUiStore } from "./ui";
 import { useWorkspaceStore } from "./workspace";
 
-const MAX_STEPS = PI_AGENT.maxSteps;
+const MAX_STEPS = CLAUDE_AGENT.maxSteps;
 const MAX_HISTORY_MESSAGES = 40;
 const EMPTY_RETRY_SECONDS = 3;
 const EMPTY_RETRY_PROMPT = "keep going";
@@ -50,7 +50,7 @@ export type AgentMessage =
       id: string;
       role: "assistant";
       content: string;
-      /** DeepSeek's separate `reasoning_content` stream for this step. */
+      /** Extended-thinking stream for this step. */
       reasoning?: string;
       /** Thinking is rendered in one block once the provider finishes it. */
       reasoningDone?: boolean;
@@ -84,7 +84,7 @@ export interface AgentLimitCountdown {
 }
 
 export interface AgentState {
-  /** Pi harness status reported by the Nitro server. */
+  /** Claude harness status reported by the Nitro server. */
   status: AgentStatusResponse | null;
   statusLoaded: boolean;
   runStatus: AgentRunStatus;
@@ -163,7 +163,7 @@ function trimHistory(history: AgentChatMessage[]): AgentChatMessage[] {
   let slice = history.slice(-MAX_HISTORY_MESSAGES);
   while (slice.length > 0 && slice[0].role === "tool") slice.shift();
 
-  // Drop the oldest turns once the transcript grows past the Pi harness's
+  // Drop the oldest turns once the transcript grows past the Claude harness's
   // auto-compact budget (rough chars-per-token estimate).
   let characters = slice.reduce(
     (total, message) => total + messageChars(message),
@@ -225,7 +225,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
         emptyResponseRetry: { ...current, secondsLeft: 0, status: "cancelled" },
       });
       addNotice(
-        "The Pi harness is not configured. Set DEEPSEEK_API_KEY (or AGENT_API_KEY) in .env.local and restart the server.",
+        "The Claude agent is not configured. Set DEEPSEEK_API_KEY (or AGENT_API_KEY) in .env.local and restart the server.",
       );
       return;
     }
@@ -307,7 +307,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
         limitCountdown: { ...current, secondsLeft: 0, status: "cancelled" },
       });
       addNotice(
-        "The Pi harness is not configured. Set DEEPSEEK_API_KEY (or AGENT_API_KEY) in .env.local and restart the server.",
+        "The Claude agent is not configured. Set DEEPSEEK_API_KEY (or AGENT_API_KEY) in .env.local and restart the server.",
       );
       return;
     }
@@ -367,17 +367,16 @@ export const useAgentStore = create<AgentState>((set, get) => {
   };
 
   /**
-   * Pi harness path. Pi's Agent owns the multi-turn loop and tool execution;
-   * this adapter streams its lifecycle events into the same transcript UI.
+   * Claude harness path. The browser owns the Messages loop and executes every
+   * tool against the VirtualFS; lifecycle events stream into the transcript UI.
    */
-  const runPiLoop = async ({
+  const runClaudeLoop = async ({
     baseHistory,
     undoSnapshot,
     controller,
     runId,
   }: RunLoopOptions): Promise<RunOutcome> => {
     let changed = false;
-    let finalError: string | null = null;
     let currentAssistantId: string | null = null;
     let streamedText = "";
     let streamedReasoning = "";
@@ -387,10 +386,11 @@ export const useAgentStore = create<AgentState>((set, get) => {
     const undoPatch = () =>
       changed && undoSnapshot ? { undoSnapshot, undoAvailable: true } : {};
 
-    const session = createPiSession({
+    const session = createClaudeSession({
       history: trimHistory(baseHistory),
       systemPrompt: buildAgentSystemPrompt(),
       maxSteps: MAX_STEPS,
+      model: get().status?.model,
       onTodos: (todos) => set({ todos }),
     });
 
@@ -489,8 +489,6 @@ export const useAgentStore = create<AgentState>((set, get) => {
         const finalText = text || streamedText;
         const finalThinking = thinking || streamedReasoning;
         const hasToolCalls = blocks.some((block) => block.type === "toolCall");
-        // A later successful retry clears an earlier provider error.
-        finalError = event.message.errorMessage || null;
 
         set((current) => ({
           messages: current.messages.flatMap((message) => {
@@ -603,8 +601,6 @@ export const useAgentStore = create<AgentState>((set, get) => {
         addNotice("Stopped.");
         return "stopped";
       }
-
-      if (finalError) throw new Error(finalError);
 
       const nextHistory = session.toHistory();
       set({ history: nextHistory });
@@ -723,7 +719,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
       ],
     });
 
-    return runPiLoop({
+    return runClaudeLoop({
       baseHistory,
       undoSnapshot: snapshot,
       controller,
@@ -791,7 +787,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
       const state = get();
       if (!isConfigured(state)) {
         addNotice(
-          "The Pi harness is not configured. Set DEEPSEEK_API_KEY (or AGENT_API_KEY) in .env.local and restart the server.",
+          "The Claude agent is not configured. Set DEEPSEEK_API_KEY (or AGENT_API_KEY) in .env.local and restart the server.",
         );
         return;
       }
@@ -829,7 +825,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
         ),
       }));
 
-      const outcome = await runPiLoop({
+      const outcome = await runClaudeLoop({
         baseHistory: state.history,
         undoSnapshot: snapshot,
         controller,

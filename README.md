@@ -4,8 +4,8 @@ Forge is an IDE that runs its entire development environment in the browser.
 The editor, file explorer, terminal, and live preview share an in-memory file
 system provided by [almostnode]; a Vite-compatible dev server is mounted inside
 the page and served through a service worker. A Nitro backend handles
-authentication and relays the Pi harness's model API calls; project files stay
-in the browser's Origin Private File System.
+authentication and relays the frontend Claude harness's model API calls; project
+files stay in the browser's Origin Private File System.
 
 Built with **Vite 7 · Nitro 3 · TypeScript · React 19 · Zustand 5 · Tailwind CSS 4 · almostnode 0.2.14**.
 
@@ -23,7 +23,7 @@ Built with **Vite 7 · Nitro 3 · TypeScript · React 19 · Zustand 5 · Tailwin
 │  Nitro API ◀── /api/auth + /api/anthropic transport (JWT)            │
 │                                                                      │
 │  Agent chat ── tools ──▶ VirtualFS ──▶ OPFS sandbox/<ide>/projects  │
-│       └── Pi harness · /api/anthropic (JWT) ──▶ DeepSeek API        │
+│       └── Claude harness · /api/anthropic (JWT) ──▶ DeepSeek API    │
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -113,12 +113,13 @@ Keyboard shortcuts: `⌘B` explorer · `⌘J` panel · `⌘⇧A` focus agent cha
 
 ## Agent workbench
 
-The agent runs **in this tab** on the Pi harness. The browser owns the
-conversation, the tool loop, and every file operation; the only thing that leaves
-the tab is the model request, sent through a same-origin JWT route:
+The agent runs **in this tab** on the Claude Messages harness. The browser owns
+the conversation, the tool loop, permission grant, and every file operation; the
+only thing that leaves the tab is the model request, sent through a same-origin
+JWT proxy:
 
 ```
-pi ── pi-agent-core + pi-ai ──▶ POST /api/anthropic/v1/messages (JWT)
+browser ── @anthropic-ai/sdk ──▶ POST /api/anthropic/v1/messages (JWT)
                                              │
                                              ▼
                               https://api.deepseek.com/anthropic
@@ -126,22 +127,17 @@ pi ── pi-agent-core + pi-ai ──▶ POST /api/anthropic/v1/messages (JWT)
                                   key inserted server-side
 ```
 
-`@earendil-works/pi-agent-core` owns the Agent/session loop, tool execution,
-steering, and lifecycle events, while `@earendil-works/pi-ai` supplies the
-Anthropic Messages transport. The harness creates a session from the persisted
-transcript, subscribes to `message_update` / `tool_execution_*` / `agent_end`
-events, and maps them into the transcript UI. Tools still operate on the
-in-tab `VirtualFS`, and the API key stays behind the JWT route.
+`@anthropic-ai/sdk` supplies the Messages API client and streaming transport.
+`claude-harness.ts` owns the multi-step loop and executes every tool against the
+in-tab `VirtualFS`. Tool permissions are **allow-all** for a submitted prompt:
+reads, writes, edits, listing, search, shell, and the task plan run immediately
+without a second confirmation dialog.
 
-The published `@earendil-works/pi-coding-agent` SDK itself is Node/Bun-only:
-`createAgentSession()` pulls in `node:fs`, file-backed JSONL sessions, and
-native tool processes. Forge uses the browser-safe Pi packages behind the same
-session shape (`subscribe`, `prompt`/`continue`, `abort`, `dispose`) so the
-coding-agent workflow stays in the frontend without moving the loop server-side.
+The harness is configured in `shared/agent.ts`:
 
-The harness is configured in `shared/pi.ts`:
-
-- model `deepseek-flash[1m]`, thinking level `medium`
+- model `deepseek-flash[1m]`, effort `high`
+- 7,168 thinking tokens for budget-based providers; Claude 5-generation models
+  automatically switch to adaptive thinking
 - context window 500k, auto-compact window 400k (the browser drops the oldest
   turns past that budget)
 - 8,192 response tokens per step and a 100-step loop cap
@@ -149,6 +145,7 @@ The harness is configured in `shared/pi.ts`:
 The Forge JWT is the only browser credential; the server swaps it for
 `DEEPSEEK_API_KEY`, falling back to `AGENT_API_KEY`, and forwards to
 `DEEPSEEK_ANTHROPIC_BASE_URL` (default `https://api.deepseek.com/anthropic`).
+The browser never contacts DeepSeek directly.
 It accepts the JWT as either `Authorization: Bearer` or `x-api-key`, allows only
 `v1/messages` and `v1/messages/count_tokens`, and never lets the caller choose
 the upstream URL.
@@ -156,7 +153,7 @@ the upstream URL.
 > Why not `@anthropic-ai/claude-agent-sdk`? Its `query()` spawns the Claude Code
 > native binary, which is Node-only; the package's `/browser` entry only attaches
 > to Anthropic's remote-session service. Running it here would move the loop back
-> to the server, so the frontend uses the browser-safe Pi primitives instead.
+> to the server, so Forge uses the official browser-safe Messages SDK instead.
 
 The shared tool set is `read_file`, `write_file`, `replace_in_file`,
 `list_files`, `search` (case-insensitive keyword search across all files),
@@ -164,11 +161,12 @@ The shared tool set is `read_file`, `write_file`, `replace_in_file`,
 
 Each turn:
 
-1. The Pi harness sends the system prompt, conversation, and tool schemas
-   through pi-ai's Anthropic transport.
+1. The Claude harness sends the system prompt, conversation, and tool schemas
+   through the Anthropic Messages API.
 2. Content streams into the assistant bubble while thinking deltas stream into a
    fixed-height, auto-scrolling **Thinking log** above it.
-3. Tool calls are executed in order against the almostnode `VirtualFS`.
+3. Tool calls are auto-approved and executed in order against the almostnode
+   `VirtualFS`.
 4. File tools write through `IdeRuntime`, which mirrors every mutation into OPFS.
 5. `todo_write` updates the pinned task panel instead of producing a tool card.
 6. The loop repeats until the model answers without tool calls (max 100 steps). If
@@ -228,7 +226,7 @@ sandbox/<ide-sandbox-id>/projects/<project-id>/.forge/project.json
 
 | Variable                      | Purpose                                                                 |
 | ----------------------------- | ----------------------------------------------------------------------- |
-| `DEEPSEEK_API_KEY`            | Credential inserted by the Pi harness transport                         |
+| `DEEPSEEK_API_KEY`            | Credential inserted by the Claude harness proxy                         |
 | `AGENT_API_KEY`               | Credential fallback                                                     |
 | `DEEPSEEK_ANTHROPIC_BASE_URL` | Anthropic-compatible upstream (default `https://api.deepseek.com/anthropic`) |
 | `FORGE_PASSWORD`              | Password that gates the UI and issues the JWT                           |
@@ -282,8 +280,8 @@ tree, tabs, buffers, logs, project metadata, and layout.
 │   │   ├── bootstrap.ts    # OPFS → starter hydration; binds the sink
 │   │   ├── shell.ts        # in-browser shell over the VFS
 │   │   ├── opfs.ts         # OPFS project store + runtime file sink
-│   │   ├── agent-client.ts  # Pi harness status client
-│   │   ├── pi-harness.ts    # pi-agent-core session + pi-ai transport
+│   │   ├── agent-client.ts  # Claude harness status client
+│   │   ├── claude-harness.ts # browser Messages loop + local tool execution
 │   │   ├── agent-tools.ts   # in-tab tool schemas + VFS/bash execution
 │   │   └── api.ts           # authentication client
 │   └── store/              # runtime · workspace · projects · ui · agent (Zustand)
@@ -293,7 +291,7 @@ tree, tabs, buffers, logs, project metadata, and layout.
 │   └── utils/              # password gate
 ├── shared/
 │   ├── types.ts            # API + agent types
-│   └── pi.ts               # Pi harness model/compaction settings
+│   └── agent.ts            # Claude harness model/compaction settings
 ```
 
 Project code and the agent transcript live in the browser's OPFS.
@@ -305,16 +303,16 @@ Project code and the agent transcript live in the browser's OPFS.
 | GET    | `/api/health`       | Service health                           |
 | GET    | `/api/auth`         | Whether a password is required/unlocked  |
 | POST   | `/api/auth`         | Exchange `{ password }` for a no-expiry JWT |
-| GET    | `/api/agent/status` | Pi harness + credential status           |
-| POST   | `/api/anthropic/v1/messages` | JWT-authenticated Pi harness transport |
+| GET    | `/api/agent/status` | Claude harness + credential status       |
+| POST   | `/api/anthropic/v1/messages` | JWT-authenticated Claude harness proxy |
 | POST   | `/api/anthropic/v1/messages/count_tokens` | Token-count passthrough |
 
 All routes except `GET /api/auth` and `POST /api/auth` require
 `Authorization: Bearer <token>` when `FORGE_PASSWORD` is configured. The
-transport also accepts the JWT as `x-api-key`, which is how pi-ai's Anthropic
-client authenticates.
+transport also accepts the JWT as `x-api-key`, which is how the Anthropic SDK
+authenticates.
 
-The Pi harness transport validates the Forge JWT, inserts the server-side key,
+The Claude harness proxy validates the Forge JWT, inserts the server-side key,
 and returns the upstream stream unchanged; the browser agent executes tools
 locally and mirrors files to OPFS. Project files are never uploaded to the
 server.

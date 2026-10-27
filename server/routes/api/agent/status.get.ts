@@ -1,5 +1,5 @@
 import { defineEventHandler } from 'h3';
-import { PI_AGENT } from '../../../../shared/pi';
+import { CLAUDE_AGENT } from '../../../../shared/agent';
 import type { AgentStatusResponse } from '../../../../shared/types';
 import { authGuard } from '../../../utils/auth';
 
@@ -26,11 +26,13 @@ export default defineEventHandler(async (event) => {
 
   return {
     configured: Boolean(key),
-    provider: PI_AGENT.provider,
-    api: PI_AGENT.api,
-    harness: PI_AGENT.harness,
-    model: PI_AGENT.model,
-    thinkingLevel: PI_AGENT.thinkingLevel,
+    provider: CLAUDE_AGENT.provider,
+    api: CLAUDE_AGENT.api,
+    harness: CLAUDE_AGENT.harness,
+    model: CLAUDE_AGENT.model,
+    effort: CLAUDE_AGENT.effort,
+    permissionMode: CLAUDE_AGENT.permissionMode,
+    proxy: CLAUDE_AGENT.baseUrl,
     keySource,
   } satisfies AgentStatusResponse;
 });

@@ -20,6 +20,11 @@ export interface AgentToolCall {
   };
 }
 
+export interface AgentThinkingBlock {
+  thinking: string;
+  signature?: string;
+}
+
 export interface AgentChatMessage {
   role: AgentRole;
   content: string | null;
@@ -28,8 +33,12 @@ export interface AgentChatMessage {
   tool_call_id?: string;
   /** Anthropic extended-thinking text replayed on the next tool turn. */
   thinking?: string;
-  /** Opaque signature DeepSeek attaches to a thinking block, when present. */
+  /** Opaque signature the provider attaches to a thinking block, when present. */
   thinking_signature?: string;
+  /** Full ordered thinking blocks, including each block's signature. */
+  thinking_blocks?: AgentThinkingBlock[];
+  /** Whether a persisted tool result was an error. */
+  is_error?: boolean;
 }
 
 export interface AgentToolDefinition {
@@ -43,11 +52,13 @@ export interface AgentToolDefinition {
 
 export interface AgentStatusResponse {
   configured: boolean;
-  provider: 'pi';
+  provider: 'anthropic';
   api: 'anthropic-messages';
-  harness: 'pi-agent-core';
+  harness: 'claude-messages-sdk';
   model: string;
-  thinkingLevel: string;
+  effort: string;
+  permissionMode: 'allow-all';
+  proxy: string;
   keySource: 'DEEPSEEK_API_KEY' | 'AGENT_API_KEY' | null;
 }
 
