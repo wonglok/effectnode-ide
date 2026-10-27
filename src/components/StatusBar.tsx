@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react';
 import { basename } from '@/lib/paths';
 import { languageLabel } from '@/lib/file-tree';
 import { useRuntimeStore } from '@/store/runtime';
+import { useUiStore } from '@/store/ui';
 import { useWorkspaceStore } from '@/store/workspace';
 
 export function StatusBar() {
   const activeFile = useWorkspaceStore((state) => state.activeFile);
   const cursor = useWorkspaceStore((state) => state.cursor);
   const status = useRuntimeStore((state) => state.status);
+  const setCreditsOpen = useUiStore((state) => state.setCreditsOpen);
   const lastHmrAt = useRuntimeStore((state) => state.lastHmrAt);
   const lastHmrPath = useRuntimeStore((state) => state.lastHmrPath);
 
@@ -22,8 +24,13 @@ export function StatusBar() {
   return (
     <footer className="statusbar">
       <div className="statusbar-left">
-        <span className="statusbar-brand">almostnode</span>
-        <span className="statusbar-version">0.2.14</span>
+        <button
+          className="statusbar-credit"
+          onClick={() => setCreditsOpen(true)}
+          title="Open the credits"
+        >
+          CREDIT
+        </button>
         <span className="statusbar-divider" />
         <span className="statusbar-path">{activeFile ?? 'no file open'}</span>
         {activeFile ? <span className="statusbar-language">{languageLabel(activeFile)}</span> : null}

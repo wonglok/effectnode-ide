@@ -51,7 +51,6 @@ import { RichText } from "./RichText";
 const SUGGESTIONS = [
   "Add a new scene at the end: life is good with prism glass material.",
   "Add a new transition visaul effect for the last scene: like a new water ripple , keep aspect ratio of water droplet",
-  'Please update the "MY COMPANY" branding placeholder to my own brand:',
 ];
 
 const ATTACHMENTS_DIR = "/public/attachments";

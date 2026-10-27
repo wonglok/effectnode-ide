@@ -25,7 +25,7 @@ function ConsoleView() {
   return (
     <div className="console-view">
       {logs.length === 0 ? (
-        <div className="console-empty">Runtime messages from almostnode will appear here.</div>
+        <div className="console-empty">Runtime messages will appear here.</div>
       ) : (
         logs.map((log) => (
           <div key={log.id} className={`console-line level-${log.level}`}>

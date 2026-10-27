@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "description": "A browser IDE powered by almostnode, Vite, Nitro, React and Zustand.",
+  "description": "A browser-native project IDE with a live preview, agent chat and local persistence.",
   "engines": {
     "node": ">=20"
   },

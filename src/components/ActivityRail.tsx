@@ -61,9 +61,6 @@ export function ActivityRail() {
         >
           <CircleHelp size={17} />
         </button>
-        <div className="rail-wordmark" aria-hidden="true">
-          almostnode
-        </div>
         <div
           className={`rail-led status-${status}`}
           title={`Runtime ${status}`}

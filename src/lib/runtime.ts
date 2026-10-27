@@ -137,9 +137,9 @@ export class IdeRuntime {
     if (this.bootPromise) return this.bootPromise;
 
     const bootPromise = (async () => {
-      this.setStatus('booting', 'Starting almostnode');
+      this.setStatus('booting', 'Starting preview');
       try {
-        this.log('info', 'Loading almostnode runtime…');
+        this.log('info', 'Loading preview runtime…');
         this.lib = await import('almostnode');
 
         // Mount the project first so the editor remains usable even if the
@@ -179,7 +179,7 @@ export class IdeRuntime {
     files: Record<string, string>,
     assets: Record<string, Uint8Array> = {}
   ): void {
-    if (!this.lib) throw new Error('almostnode is not loaded');
+    if (!this.lib) throw new Error('Preview runtime is not loaded');
     const vfs = new this.lib.VirtualFS();
     this.binaryAssetPaths = new Set(Object.keys(assets));
     this.assetAliases = new Map();

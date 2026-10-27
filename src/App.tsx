@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { ActivityRail } from '@/components/ActivityRail';
 import {
   ConfirmDialog,
+  CreditsDialog,
   PromptDialog,
   ShortcutsDialog,
 } from '@/components/Dialogs';
@@ -235,6 +236,7 @@ export default function App() {
       <PromptDialog />
       <ConfirmDialog />
       <ShortcutsDialog />
+      <CreditsDialog />
       <Toasts />
     </div>
   );

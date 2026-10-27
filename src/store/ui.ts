@@ -48,6 +48,7 @@ interface UiState {
   chatOnlyPreviewRatio: number;
   terminalHeight: number;
   shortcutsOpen: boolean;
+  creditsOpen: boolean;
   projectSwitcherOpen: boolean;
   prompt: PromptRequest | null;
   confirm: ConfirmRequest | null;
@@ -70,6 +71,7 @@ interface UiState {
   setChatOnlyPreviewRatio: (ratio: number) => void;
   setTerminalHeight: (height: number) => void;
   setShortcutsOpen: (open: boolean) => void;
+  setCreditsOpen: (open: boolean) => void;
   setProjectSwitcherOpen: (open: boolean) => void;
   openPrompt: (request: PromptRequest) => void;
   closePrompt: () => void;
@@ -96,6 +98,7 @@ export const useUiStore = create<UiState>()(
       chatOnlyPreviewRatio: 0.725,
       terminalHeight: 176,
       shortcutsOpen: false,
+      creditsOpen: false,
       projectSwitcherOpen: false,
       prompt: null,
       confirm: null,
@@ -142,6 +145,7 @@ export const useUiStore = create<UiState>()(
       setTerminalHeight: (height) =>
         set({ terminalHeight: clamp(height, 110, 420) }),
       setShortcutsOpen: (open) => set({ shortcutsOpen: open }),
+      setCreditsOpen: (open) => set({ creditsOpen: open }),
       setProjectSwitcherOpen: (open) => set({ projectSwitcherOpen: open }),
       openPrompt: (request) => set({ prompt: request }),
       closePrompt: () => set({ prompt: null }),

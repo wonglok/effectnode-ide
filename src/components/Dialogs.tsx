@@ -189,7 +189,7 @@ export function ShortcutsDialog() {
         <div className="projects-section-label">How it works</div>
         <ul className="help-list">
           <li>
-            <strong>almostnode</strong> mounts an in-memory virtual file system and a Vite-compatible dev
+            <strong>Forge</strong> mounts an in-memory virtual file system and a Vite-compatible dev
             server in this tab.
           </li>
           <li>
@@ -215,7 +215,214 @@ export function ShortcutsDialog() {
       </div>
 
       <div className="help-footnote">
-        almostnode 0.2.14 · Vite 7 · Nitro 3 · React 19 · Zustand 5
+        Built with open source · CREDIT in the status bar lists every project
+      </div>
+    </Modal>
+  );
+}
+
+interface Credit {
+  name: string;
+  version: string;
+  license: string;
+  role: string;
+  href: string;
+}
+
+const CREDIT_GROUPS: { label: string; items: Credit[] }[] = [
+  {
+    label: 'Runtime & build',
+    items: [
+      {
+        name: 'almostnode',
+        version: '0.2.14',
+        license: 'MIT',
+        role: 'In-browser virtual file system and Vite dev server',
+        href: 'https://github.com/macaly/almostnode',
+      },
+      {
+        name: 'Vite',
+        version: '7.3.7',
+        license: 'MIT',
+        role: 'Module graph, transforms and HMR',
+        href: 'https://vite.dev',
+      },
+      {
+        name: 'Nitro',
+        version: '3.0.0',
+        license: 'MIT',
+        role: 'Local API server and model proxy',
+        href: 'https://nitro.build',
+      },
+      {
+        name: 'esbuild',
+        version: '0.25.12',
+        license: 'MIT',
+        role: 'Fast JavaScript and TypeScript transforms',
+        href: 'https://esbuild.github.io',
+      },
+      {
+        name: 'h3',
+        version: '2.0.1-rc.2',
+        license: 'MIT',
+        role: 'HTTP server primitives',
+        href: 'https://h3.dev',
+      },
+    ],
+  },
+  {
+    label: 'Interface',
+    items: [
+      {
+        name: 'React',
+        version: '19.3.1',
+        license: 'MIT',
+        role: 'UI runtime and DOM renderer',
+        href: 'https://react.dev',
+      },
+      {
+        name: 'Zustand',
+        version: '5.0.16',
+        license: 'MIT',
+        role: 'Application state',
+        href: 'https://github.com/pmndrs/zustand',
+      },
+      {
+        name: 'Tailwind CSS',
+        version: '4.3.3',
+        license: 'MIT',
+        role: 'Design tokens and utilities',
+        href: 'https://tailwindcss.com',
+      },
+      {
+        name: 'CodeMirror',
+        version: '6.0.2',
+        license: 'MIT',
+        role: 'Code editor and language modes',
+        href: 'https://codemirror.net',
+      },
+      {
+        name: '@uiw/react-codemirror',
+        version: '4.25.12',
+        license: 'MIT',
+        role: 'React bindings for CodeMirror',
+        href: 'https://github.com/uiwjs/react-codemirror',
+      },
+      {
+        name: 'Lucide',
+        version: '1.61.0',
+        license: 'ISC',
+        role: 'Icon set',
+        href: 'https://lucide.dev',
+      },
+    ],
+  },
+  {
+    label: 'Agent',
+    items: [
+      {
+        name: '@earendil-works/pi-agent-core',
+        version: '1.4.0',
+        license: 'MIT',
+        role: 'Agent loop and tool calls',
+        href: 'https://github.com/earendil-works/pi',
+      },
+      {
+        name: '@earendil-works/pi-ai',
+        version: '1.4.0',
+        license: 'MIT',
+        role: 'Model provider layer',
+        href: 'https://github.com/earendil-works/pi',
+      },
+    ],
+  },
+  {
+    label: 'Preview & utilities',
+    items: [
+      {
+        name: 'Three.js',
+        version: '0.186.1',
+        license: 'MIT',
+        role: '3D rendering in starter scenes',
+        href: 'https://threejs.org',
+      },
+      {
+        name: 'fflate',
+        version: '0.8.3',
+        license: 'MIT',
+        role: 'ZIP compression for templates and exports',
+        href: 'https://github.com/101arrowz/fflate',
+      },
+      {
+        name: 'pako',
+        version: '2.2.0',
+        license: 'MIT',
+        role: 'Gzip and deflate streams',
+        href: 'https://github.com/nodeca/pako',
+      },
+      {
+        name: 'TypeScript',
+        version: '5.9.3',
+        license: 'Apache-2.0',
+        role: 'Type checking and language tooling',
+        href: 'https://www.typescriptlang.org',
+      },
+    ],
+  },
+];
+
+export function CreditsDialog() {
+  const open = useUiStore((state) => state.creditsOpen);
+  const setOpen = useUiStore((state) => state.setCreditsOpen);
+
+  if (!open) return null;
+
+  return (
+    <Modal
+      title="Credits"
+      subtitle="Forge is built on the work of these open-source projects."
+      onClose={() => setOpen(false)}
+      width={620}
+      footer={
+        <button className="ghost-button" onClick={() => setOpen(false)}>
+          Close
+        </button>
+      }
+    >
+      <p className="credits-intro">
+        Thank you to the maintainers and contributors behind every project listed here, and to the
+        transitive dependencies they build upon.
+      </p>
+
+      <div className="credits-groups">
+        {CREDIT_GROUPS.map((group) => (
+          <section className="credits-group" key={group.label}>
+            <div className="projects-section-label">{group.label}</div>
+            <ul className="credits-list">
+              {group.items.map((item) => (
+                <li className="credit-item" key={item.name}>
+                  <div className="credit-line">
+                    <a
+                      className="credit-name"
+                      href={item.href}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      {item.name}
+                    </a>
+                    <span className="credit-version">{item.version}</span>
+                    <span className="credit-license">{item.license}</span>
+                  </div>
+                  <div className="credit-role">{item.role}</div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ))}
+      </div>
+
+      <div className="help-footnote">
+        Licenses are reproduced by their respective projects. Versions reflect this build.
       </div>
     </Modal>
   );

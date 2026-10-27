@@ -62,7 +62,7 @@ export function PreviewBody() {
           <div className="boot-orbit">
             <span />
           </div>
-          <h3>Booting almostnode</h3>
+          <h3>Booting preview</h3>
           <p>{statusMessage || 'Mounting the virtual file system and dev server…'}</p>
           <div className="boot-steps">
             <span className="is-done">virtual file system</span>
