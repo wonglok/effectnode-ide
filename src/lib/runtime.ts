@@ -489,6 +489,26 @@ export class IdeRuntime {
     }
   }
 
+  /** Current size of all project text and binary files, in bytes. */
+  projectBytes(): number {
+    if (!this.vfs) return 0;
+
+    const encoder = new TextEncoder();
+    let total = 0;
+    for (const content of Object.values(this.snapshot())) {
+      total += encoder.encode(content).byteLength;
+    }
+    for (const path of this.binaryAssetPaths) {
+      try {
+        total += this.vfs.readFileSync(path).byteLength;
+      } catch {
+        // The asset was removed between the set update and the read.
+      }
+    }
+
+    return total;
+  }
+
   /**
    * Export the project's binary `public/` files as a path → bytes map. They
    * are excluded from `snapshot()` because they cannot be read as text.

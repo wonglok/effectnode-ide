@@ -2435,6 +2435,11 @@ code {
   background: var(--blue);
 }
 
+.toast-warn .toast-mark {
+  background: var(--amber);
+  box-shadow: 0 0 7px rgba(255, 193, 92, 0.55);
+}
+
 .toast-message {
   flex: 1;
   font-size: 11.5px;
@@ -4279,6 +4284,14 @@ code {
 .agent-attachment.has-error {
   border-color: rgba(255, 115, 105, 0.4);
   color: var(--red);
+}
+
+.agent-attachment.has-warning {
+  border-color: rgba(255, 193, 92, 0.35);
+}
+
+.agent-attachment.has-warning .agent-attachment-size {
+  color: var(--amber);
 }
 
 .agent-attachment-name {

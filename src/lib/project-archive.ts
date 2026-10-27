@@ -5,6 +5,11 @@ import {
 } from '../../shared/agent-state';
 import packageJson from '../../package.json';
 import { classifyFile } from './binary-file';
+import {
+  MAX_ARCHIVE_BYTES,
+  MAX_ATTACHMENT_BYTES,
+  MAX_PROJECT_BYTES,
+} from './project-limits';
 
 /**
  * Forge project archives are plain ZIP files with a root manifest:
@@ -23,12 +28,7 @@ export const ARCHIVE_VERSION = 2;
 export const MANIFEST_FILENAME = 'forge.manifest.json';
 export const APP_VERSION = packageJson.version;
 
-// Public assets now travel in the archive, so the limits must accommodate the
-// attachment tool (8 MB per file, 10 files at once).
-const MAX_ARCHIVE_BYTES = 96 * 1024 * 1024;
-const MAX_EXTRACTED_BYTES = 96 * 1024 * 1024;
 const MAX_FILES = 2000;
-const MAX_FILE_BYTES = 8 * 1024 * 1024;
 
 export interface ProjectArchiveManifest {
   format: typeof ARCHIVE_FORMAT;
@@ -122,7 +122,11 @@ export async function readProjectArchive(file: File): Promise<ImportedProject> {
     throw new ProjectArchiveError('Choose a .zip file exported from Forge.');
   }
   if (file.size > MAX_ARCHIVE_BYTES) {
-    throw new ProjectArchiveError('That ZIP is larger than the 25 MB import limit.');
+    throw new ProjectArchiveError(
+      `That ZIP is larger than the ${
+        MAX_ARCHIVE_BYTES / 1024 / 1024
+      } MB import limit.`
+    );
   }
 
   const bytes = new Uint8Array(await file.arrayBuffer());
@@ -160,12 +164,12 @@ export async function readProjectArchive(file: File): Promise<ImportedProject> {
     extracted = unzipSync(bytes, {
       filter: (entry) => {
         if (entry.name.endsWith('/') || !entry.name.startsWith(prefix)) return false;
-        if (entry.originalSize > MAX_FILE_BYTES) {
+        if (entry.originalSize > MAX_ATTACHMENT_BYTES) {
           limitHit = true;
           return false;
         }
         extractedBytes += entry.originalSize;
-        if (extractedBytes > MAX_EXTRACTED_BYTES) {
+        if (extractedBytes > MAX_PROJECT_BYTES) {
           limitHit = true;
           return false;
         }
@@ -178,7 +182,9 @@ export async function readProjectArchive(file: File): Promise<ImportedProject> {
 
   if (limitHit) {
     throw new ProjectArchiveError(
-      'This ZIP exceeds the import limits (96 MB total, 8 MB per file).',
+      `This ZIP exceeds the project limits (${
+        MAX_PROJECT_BYTES / 1024 / 1024
+      } MB total, ${MAX_ATTACHMENT_BYTES / 1024 / 1024} MB per file).`,
     );
   }
 

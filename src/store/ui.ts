@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
-export type ToastTone = "info" | "success" | "error";
+export type ToastTone = "info" | "success" | "warn" | "error";
 
 export interface Toast {
   id: number;

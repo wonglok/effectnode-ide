@@ -30,6 +30,11 @@ import {
   X,
 } from "lucide-react";
 import { getBoundProjectId, opfsProjectStore } from "@/lib/opfs";
+import {
+  ATTACHMENT_WARNING_BYTES,
+  MAX_ATTACHMENT_BYTES,
+  MAX_PROJECT_BYTES,
+} from "@/lib/project-limits";
 import { runtime } from "@/lib/runtime";
 import {
   selectAgentConfigured,
@@ -50,7 +55,6 @@ const SUGGESTIONS = [
 ];
 
 const ATTACHMENTS_DIR = "/public/attachments";
-const MAX_ATTACHMENT_BYTES = 8 * 1024 * 1024;
 const MAX_ATTACHMENTS = 10;
 
 interface AttachmentDraft {
@@ -114,10 +118,10 @@ function attachmentNote(attachments: AttachmentDraft[]): string {
   const lines = attachments.map((attachment) =>
     attachment.kind === "text"
       ? `- ${attachment.path} (${attachment.type}, ${formatBytes(attachment.size)}) — text file, readable with your tools`
-      : `- ${attachment.path} (${attachment.type}, ${formatBytes(attachment.size)}) — binary asset, use this path in code`
+      : `- ${attachment.path} (${attachment.type}, ${formatBytes(attachment.size)}) — binary asset, use this path in code`,
   );
   return `Attached files uploaded to the project's public folder:\n${lines.join(
-    "\n"
+    "\n",
   )}`;
 }
 
@@ -201,7 +205,13 @@ function toolVisual(name: string): {
   return { icon: <Sparkles size={13} />, kind: "other", label: name };
 }
 
-function ThinkingLog({ text, streaming }: { text: string; streaming: boolean }) {
+function ThinkingLog({
+  text,
+  streaming,
+}: {
+  text: string;
+  streaming: boolean;
+}) {
   const [open, setOpen] = useState(true);
   const bodyRef = useRef<HTMLDivElement>(null);
   const trimmed = text.trim();
@@ -223,7 +233,11 @@ function ThinkingLog({ text, streaming }: { text: string; streaming: boolean }) 
         onClick={() => setOpen((value) => !value)}
       >
         <span className="agent-thinking-mark">
-          {streaming ? <Loader2 size={11} className="spin" /> : <Brain size={11} />}
+          {streaming ? (
+            <Loader2 size={11} className="spin" />
+          ) : (
+            <Brain size={11} />
+          )}
         </span>
         <span className="agent-thinking-title">Thinking log</span>
         <span className="agent-thinking-meta">
@@ -257,7 +271,9 @@ function ToolCard({ tool }: { tool: AgentToolEvent }) {
   const expandable = detail.length > 72;
 
   return (
-    <div className={`agent-tool is-${tool.status} agent-tool-kind-${visual.kind}`}>
+    <div
+      className={`agent-tool is-${tool.status} agent-tool-kind-${visual.kind}`}
+    >
       <span className="agent-tool-icon">{visual.icon}</span>
       <div className="agent-tool-body">
         <div className="agent-tool-headline">
@@ -311,7 +327,9 @@ function TodoPanel() {
   const completed = todos.filter((todo) => todo.status === "completed").length;
   const active = todos.filter((todo) => todo.status === "in_progress").length;
   const allDone = todos.length > 0 && completed === todos.length;
-  const percent = todos.length ? Math.round((completed / todos.length) * 100) : 0;
+  const percent = todos.length
+    ? Math.round((completed / todos.length) * 100)
+    : 0;
 
   useEffect(() => {
     // Fold away once everything is done, and reopen when a new plan starts.
@@ -509,7 +527,11 @@ function EmptyResponseRetryCard({
         : "Automatic retry cancelled.";
 
   return (
-    <div className={`agent-retry is-${retry.status}`} role="status" aria-live="polite">
+    <div
+      className={`agent-retry is-${retry.status}`}
+      role="status"
+      aria-live="polite"
+    >
       <span className="agent-retry-icon">
         <RefreshCw size={13} className={counting ? "spin" : undefined} />
       </span>
@@ -538,11 +560,11 @@ export function AgentPanel() {
   const queue = useAgentStore((state) => state.queue);
   const emptyResponseRetry = useAgentStore((state) => state.emptyResponseRetry);
   const cancelEmptyResponseRetry = useAgentStore(
-    (state) => state.cancelEmptyResponseRetry
+    (state) => state.cancelEmptyResponseRetry,
   );
   const limitCountdown = useAgentStore((state) => state.limitCountdown);
   const cancelLimitCountdown = useAgentStore(
-    (state) => state.cancelLimitCountdown
+    (state) => state.cancelLimitCountdown,
   );
   const undoAvailable = useAgentStore((state) => state.undoAvailable);
   const statusLoaded = useAgentStore((state) => state.statusLoaded);
@@ -572,10 +594,10 @@ export function AgentPanel() {
 
   const running = runStatus === "running";
   const readyAttachments = attachments.filter(
-    (attachment) => attachment.status === "ready"
+    (attachment) => attachment.status === "ready",
   );
   const uploadingAttachments = attachments.some(
-    (attachment) => attachment.status === "uploading"
+    (attachment) => attachment.status === "uploading",
   );
 
   // Attachments belong to the project that was open when they were uploaded.
@@ -587,8 +609,8 @@ export function AgentPanel() {
   const patchAttachment = (id: string, patch: Partial<AttachmentDraft>) => {
     setAttachments((list) =>
       list.map((attachment) =>
-        attachment.id === id ? { ...attachment, ...patch } : attachment
-      )
+        attachment.id === id ? { ...attachment, ...patch } : attachment,
+      ),
     );
   };
 
@@ -611,15 +633,37 @@ export function AgentPanel() {
 
     setUploadingFiles(true);
     let uploaded = 0;
+    let projectBytes = runtime.projectBytes();
 
     try {
       for (const file of picked.slice(0, room)) {
         if (file.size > MAX_ATTACHMENT_BYTES) {
           toast(
             `${file.name} is larger than ${formatBytes(MAX_ATTACHMENT_BYTES)}.`,
-            "error"
+            "error",
           );
           continue;
+        }
+        if (projectBytes + file.size > MAX_PROJECT_BYTES) {
+          toast(
+            `Adding ${file.name} would exceed the ${formatBytes(
+              MAX_PROJECT_BYTES,
+            )} project limit (${formatBytes(projectBytes)} used).`,
+            "error",
+          );
+          continue;
+        }
+        if (file.size > ATTACHMENT_WARNING_BYTES) {
+          toast(
+            `${file.name} is ${formatBytes(
+              file.size,
+            )} — large files can slow the preview and agent runs.`,
+            "warn",
+          );
+          runtime.log(
+            "warn",
+            `Large attachment: ${file.name} (${formatBytes(file.size)})`,
+          );
         }
 
         const fileName = safeFileName(file.name);
@@ -659,6 +703,9 @@ export function AgentPanel() {
           }
 
           uploaded += 1;
+          // Text can be a few bytes smaller after decoding; over-estimating is
+          // the safe direction for a hard cap.
+          projectBytes += file.size;
         } catch (error) {
           const message =
             error instanceof Error ? error.message : String(error);
@@ -675,7 +722,7 @@ export function AgentPanel() {
       runtime.requestPreviewReload();
       runtime.log(
         "info",
-        `Attached ${uploaded} file${uploaded === 1 ? "" : "s"} to ${ATTACHMENTS_DIR}`
+        `Attached ${uploaded} file${uploaded === 1 ? "" : "s"} to ${ATTACHMENTS_DIR}`,
       );
     }
   };
@@ -701,7 +748,7 @@ export function AgentPanel() {
         `Could not remove ${attachment.name}: ${
           error instanceof Error ? error.message : String(error)
         }`,
-        "error"
+        "error",
       );
     }
   };
@@ -848,9 +895,14 @@ export function AgentPanel() {
                 ))}
               </div>
               <div className="agent-welcome-meta">
-                <code>{provider}/{model}</code>
+                <code>
+                  {provider}/{model}
+                </code>
                 <span>·</span>
-                <span>pi-agent-core · tools: read · write · edit · list · shell · plan</span>
+                <span>
+                  pi-agent-core · tools: read · write · edit · list · shell ·
+                  plan
+                </span>
               </div>
             </div>
           ) : (
@@ -965,9 +1017,7 @@ export function AgentPanel() {
                         onClick={cancelLimitCountdown}
                         disabled={!counting}
                         title={
-                          counting
-                            ? "Cancel the automatic continue"
-                            : undefined
+                          counting ? "Cancel the automatic continue" : undefined
                         }
                       >
                         {counting ? "Cancel" : "Cancelled"}
@@ -1014,9 +1064,7 @@ export function AgentPanel() {
 
       <div className="agent-dock">
         <TodoPanel />
-        {running ? (
-          <AgentLoader label={runStatusText ?? ""} />
-        ) : null}
+        {running ? <AgentLoader label={runStatusText ?? ""} /> : null}
         <PromptQueue running={running} />
       </div>
 
@@ -1027,8 +1075,13 @@ export function AgentPanel() {
               key={attachment.id}
               className={`agent-attachment ${
                 attachment.status === "error" ? "has-error" : ""
-              }`}
-              title={attachment.error ?? attachment.path}
+              } ${attachment.size > ATTACHMENT_WARNING_BYTES ? "has-warning" : ""}`}
+              title={
+                attachment.error ??
+                (attachment.size > ATTACHMENT_WARNING_BYTES
+                  ? `${attachment.path} — large attachment`
+                  : attachment.path)
+              }
             >
               {attachment.status === "uploading" ? (
                 <Loader2 size={10} className="spin" />
@@ -1106,7 +1159,11 @@ export function AgentPanel() {
                 (!draft.trim() && readyAttachments.length === 0) ||
                 uploadingAttachments
               }
-              title={uploadingAttachments ? "Uploading files…" : "Queue prompt (Enter)"}
+              title={
+                uploadingAttachments
+                  ? "Uploading files…"
+                  : "Queue prompt (Enter)"
+              }
             >
               <ListPlus size={14} />
             </button>
