@@ -111,7 +111,8 @@ automatically during `npm run build`).
   snapshot's file count and the space it occupies in OPFS, and the header sums
   the project's snapshot storage. Submitting a prompt to the agent
   automatically saves a `Before · <prompt>` snapshot first, so the pre-prompt
-  files and transcript are always one click away.
+  files and transcript are always one click away. When the run completes, a
+  matching `Completed · <prompt>` snapshot records the final state.
 
 Keyboard shortcuts: `⌘B` explorer · `⌘J` panel · `⌘⇧A` focus agent chat ·
 `Esc` close dialog · `↑/↓` shell history.
@@ -223,8 +224,10 @@ comfortable letting the agent act on.
 
 Before the first step of every user-submitted prompt, Forge flushes the editor
 and writes a `Before · <prompt>` version containing the current files and agent
-transcript. Internal continuations (step-limit resume, empty-response retry) do
-not create extra snapshots.
+transcript. When the run completes, it writes a matching
+`Completed · <prompt>` version with the final files and transcript. Internal
+continuations (step-limit resume, empty-response retry) reuse the same Before
+baseline and do not create their own pairs.
 
 Each turn:
 
@@ -241,8 +244,9 @@ Each turn:
    If it is not cancelled, the harness clicks Keep going automatically and resumes
    from the saved history. **Cancel** stops the automatic resume; the Keep going
    button stays available for a manual retry.
-7. The pre-turn snapshot powers **Undo run**; task completion reloads the
-   preview automatically and plays the completion chime three times.
+7. The `Before` snapshot powers **Undo run** and the `Completed` snapshot records
+   the finished state; task completion reloads the preview automatically and
+   plays the completion chime three times.
 8. If the model ends with an empty response, a 3-second countdown sends
    `keep going`. **Cancel** stops the automatic retry; the button disables once
    the prompt is sent or the retry is cancelled.

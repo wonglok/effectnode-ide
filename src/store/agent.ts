@@ -127,6 +127,11 @@ export interface AgentState {
 
 let runSequence = 0;
 let activeRun: { id: number; controller: AbortController } | null = null;
+/**
+ * The user-submitted prompt whose run is still in flight. It survives step-limit
+ * continuations so the final state can be saved as a `Completed` version.
+ */
+let activePrompt: string | null = null;
 let initPromise: Promise<void> | null = null;
 let queueProcessing = false;
 let persistEnabled = false;
@@ -150,11 +155,14 @@ function makeId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 }
 
-/** Version label for the snapshot taken just before a submitted prompt. */
-function promptSnapshotLabel(text: string): string {
+/** Version label for the snapshots taken around a submitted prompt. */
+function promptSnapshotLabel(
+  text: string,
+  prefix: "Before" | "Completed" = "Before",
+): string {
   const line = text.replace(/\s+/g, " ").trim();
   const snippet = line.length > 56 ? `${line.slice(0, 53)}…` : line;
-  return `Before · ${snippet || "prompt"}`.slice(0, 120);
+  return `${prefix} · ${snippet || "prompt"}`.slice(0, 120);
 }
 
 function messageChars(message: AgentChatMessage): number {
@@ -700,6 +708,39 @@ export const useAgentStore = create<AgentState>((set, get) => {
     }
   };
 
+  /** Save a version of the active project; `when` labels any warning. */
+  const saveSnapshotVersion = async (
+    label: string,
+    when: string,
+  ): Promise<void> => {
+    const projectId = getBoundProjectId();
+    if (!projectId) return;
+
+    try {
+      useWorkspaceStore.getState().flush();
+      const files = runtime.snapshot();
+      if (Object.keys(files).length === 0) return;
+
+      const version = await opfsProjectStore.createVersion(
+        projectId,
+        label,
+        files,
+        serializeAgentState(get()),
+      );
+      runtime.log(
+        "success",
+        `Snapshot “${version.label}” · ${version.fileCount} files`,
+      );
+    } catch (error) {
+      runtime.log(
+        "warn",
+        `Could not snapshot ${when}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+  };
+
   /** Start one prompt. Callers must ensure the loop is idle. */
   const startPrompt = async (
     text: string,
@@ -712,36 +753,15 @@ export const useAgentStore = create<AgentState>((set, get) => {
     // completion chime is allowed when the model finishes some time later.
     primeCompletionAudio();
 
-    // Snapshot the project before acting on a user-submitted prompt, so the
-    // pre-prompt files *and* transcript are restorable from Version history.
-    // Automatic continuation/retry prompts reuse that same baseline.
+    // Snapshot before acting on a user-submitted prompt, so the pre-prompt
+    // files *and* transcript are restorable from Version history. Automatic
+    // continuation/retry prompts reuse that same baseline.
     if (!options.automatic) {
-      const projectId = getBoundProjectId();
-      if (projectId) {
-        try {
-          useWorkspaceStore.getState().flush();
-          const files = runtime.snapshot();
-          if (Object.keys(files).length > 0) {
-            const version = await opfsProjectStore.createVersion(
-              projectId,
-              promptSnapshotLabel(text),
-              files,
-              serializeAgentState(get()),
-            );
-            runtime.log(
-              "success",
-              `Snapshot “${version.label}” · ${version.fileCount} files`,
-            );
-          }
-        } catch (error) {
-          runtime.log(
-            "warn",
-            `Could not snapshot before the prompt: ${
-              error instanceof Error ? error.message : String(error)
-            }`,
-          );
-        }
-      }
+      activePrompt = text;
+      await saveSnapshotVersion(
+        promptSnapshotLabel(text),
+        "before the prompt",
+      );
     }
 
     const snapshot = runtime.snapshot();
@@ -763,12 +783,25 @@ export const useAgentStore = create<AgentState>((set, get) => {
       ],
     });
 
-    return runClaudeLoop({
+    const outcome = await runClaudeLoop({
       baseHistory,
       undoSnapshot: snapshot,
       controller,
       runId,
     });
+
+    if (outcome === "complete" && activePrompt) {
+      const prompt = activePrompt;
+      activePrompt = null;
+      await saveSnapshotVersion(
+        promptSnapshotLabel(prompt, "Completed"),
+        "after the prompt",
+      );
+    } else if (outcome === "stopped" || outcome === "error") {
+      activePrompt = null;
+    }
+
+    return outcome;
   };
 
   /** Run queued prompts in order until the queue empties or a turn pauses. */
@@ -882,6 +915,18 @@ export const useAgentStore = create<AgentState>((set, get) => {
         controller,
         runId,
       });
+
+      if (outcome === "complete" && activePrompt) {
+        const prompt = activePrompt;
+        activePrompt = null;
+        await saveSnapshotVersion(
+          promptSnapshotLabel(prompt, "Completed"),
+          "after the prompt",
+        );
+      } else if (outcome === "stopped" || outcome === "error") {
+        activePrompt = null;
+      }
+
       if (outcome === "complete") await drainQueue();
     },
 
@@ -901,10 +946,12 @@ export const useAgentStore = create<AgentState>((set, get) => {
     cancelLimitCountdown,
 
     stop: () => {
+      activePrompt = null;
       activeRun?.controller.abort();
     },
 
     clear: () => {
+      activePrompt = null;
       activeRun?.controller.abort();
       activeRun = null;
       runSequence += 1;
@@ -931,6 +978,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
       const snapshot = get().undoSnapshot;
       if (!snapshot) return;
 
+      activePrompt = null;
       activeRun?.controller.abort();
       activeRun = null;
       runSequence += 1;
@@ -974,6 +1022,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
     loadPersisted: async () => {
       persistEnabled = false;
       clearPersistTimer();
+      activePrompt = null;
       activeRun?.controller.abort();
       activeRun = null;
       runSequence += 1;
@@ -1028,6 +1077,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
     resetForProject: () => {
       persistEnabled = false;
       clearPersistTimer();
+      activePrompt = null;
       activeRun?.controller.abort();
       activeRun = null;
       runSequence += 1;
