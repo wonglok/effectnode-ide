@@ -907,7 +907,7 @@ export function AgentPanel() {
                 <span>·</span>
                 <span>
                   claude-messages-sdk · tools: read · write · edit · list ·
-                  shell · plan
+                  shell · zip · plan
                 </span>
               </div>
             </div>

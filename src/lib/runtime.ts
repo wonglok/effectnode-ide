@@ -373,6 +373,17 @@ export class IdeRuntime {
     }
   }
 
+  /** Read a binary public asset (for example a .zip) as bytes. */
+  readAsset(path: string): Uint8Array | null {
+    if (!this.binaryAssetPaths.has(path)) return null;
+    try {
+      const data = this.requireVfs().readFileSync(path);
+      return typeof data === 'string' ? null : new Uint8Array(data);
+    } catch {
+      return null;
+    }
+  }
+
   writeFile(path: string, content: string): void {
     if (this.binaryAssetPaths.has(path)) {
       throw new Error(`${path} is a read-only binary asset`);

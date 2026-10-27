@@ -162,7 +162,14 @@ the upstream URL.
 
 The shared tool set is `read_file`, `write_file`, `replace_in_file`,
 `list_files`, `search` (case-insensitive keyword search across all files),
-`run_bash`, and `todo_write`.
+`run_bash`, `compress_zip`, `decompress_zip`, and `todo_write`.
+
+`compress_zip` builds an archive from any project files or folders, text and
+binary (`public/` assets included), and writes it under `/public/` so the
+preview can serve it and OPFS keeps it across reloads. `decompress_zip` extracts
+an archive from `/public/` into the project, creating folders and overwriting
+existing files; both reject `..` paths, absolute entries, `node_modules`, and
+anything over the 20 MB per-file / 50 MB total limits.
 
 Before the first step of every user-submitted prompt, Forge flushes the editor
 and writes a `Before · <prompt>` version containing the current files and agent

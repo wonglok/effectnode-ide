@@ -1,8 +1,12 @@
+import { strToU8, unzipSync, zipSync, type Zippable } from "fflate";
 import type { AgentToolCall, AgentToolDefinition } from "../../shared/types";
 import { useUiStore } from "@/store/ui";
 import { useWorkspaceStore } from "@/store/workspace";
+import { classifyFile } from "./binary-file";
 import { buildFileTree, flattenLeaves } from "./file-tree";
+import { getBoundProjectId, opfsProjectStore } from "./opfs";
 import { joinPath, normalizePath } from "./paths";
+import { MAX_ATTACHMENT_BYTES, MAX_PROJECT_BYTES } from "./project-limits";
 import { runtime } from "./runtime";
 import { runShellCommand } from "./shell";
 
@@ -15,6 +19,9 @@ const MAX_SEARCH_OUTPUT_CHARS = 20_000;
 const MAX_SEARCH_LINE_CHARS = 300;
 const MAX_SEARCH_QUERY_CHARS = 200;
 const MAX_SEARCH_FILE_CHARS = 500_000;
+const MAX_ZIP_ENTRIES = 2_000;
+/** Archives the agent creates must live here so they persist and are served. */
+const ZIP_OUTPUT_ROOT = "/public/";
 const READ_ONLY_COMMANDS = new Set([
   "ls",
   "cat",
@@ -401,6 +408,324 @@ async function runBashTool(
   }
 }
 
+function isUnder(path: string, base: string): boolean {
+  return base === "/" || path === base || path.startsWith(`${base}/`);
+}
+
+function sizeLabel(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} kB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/** Persist a `/public/` binary so it survives a reload. */
+async function persistPublicAsset(
+  path: string,
+  data: Uint8Array,
+): Promise<boolean> {
+  if (!path.startsWith(ZIP_OUTPUT_ROOT)) return true;
+  const projectId = getBoundProjectId();
+  if (!projectId) return false;
+  try {
+    await opfsProjectStore.writeUpload(projectId, path, data);
+    return true;
+  } catch (error) {
+    runtime.log(
+      "warn",
+      `Could not persist ${path}: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+    return false;
+  }
+}
+
+/** Reject absolute paths, backslashes, null bytes and `..` segments. */
+function sanitizeZipEntry(
+  rawName: string,
+  stripRoot: boolean,
+): string | null {
+  const name = rawName.replace(/\\/g, "/");
+  if (!name || name.startsWith("/") || name.includes("\0")) return null;
+  let segments = name.split("/").filter(Boolean);
+  if (stripRoot) segments = segments.slice(1);
+  if (segments.length === 0) return null;
+  if (segments.some((segment) => segment === "." || segment === "..")) {
+    return null;
+  }
+  return segments.join("/");
+}
+
+function defaultZipDestination(zipPath: string): string {
+  const slash = zipPath.lastIndexOf("/");
+  const parent = slash > 0 ? zipPath.slice(0, slash) : "/";
+  const base = zipPath
+    .slice(slash + 1)
+    .replace(/\.zip$/i, "")
+    .trim();
+  return joinPath(parent, base || "extracted");
+}
+
+/** Write a .zip under /public from project files and binary assets. */
+async function compressZipTool(
+  args: Record<string, unknown>,
+): Promise<AgentToolOutcome> {
+  const resolved = resolvePathArg(args.path);
+  if ("error" in resolved) return fail("Compress failed", resolved.error);
+  const output = resolved.path;
+
+  if (!output.toLowerCase().endsWith(".zip")) {
+    return fail(`Compress ${output}`, "The output path must end with .zip");
+  }
+  if (!output.startsWith(ZIP_OUTPUT_ROOT)) {
+    return fail(
+      `Compress ${output}`,
+      "Write archives under /public/ so they are served and persist across reloads.",
+    );
+  }
+
+  const rawSources = args.sources ?? ["/"];
+  if (!Array.isArray(rawSources) || rawSources.length === 0) {
+    return fail("Compress failed", "sources must be a non-empty array of paths");
+  }
+  const sources: string[] = [];
+  for (const raw of rawSources) {
+    const source = resolvePathArg(raw, true);
+    if ("error" in source) return fail("Compress failed", source.error);
+    sources.push(source.path);
+  }
+
+  const textFiles = runtime.snapshot();
+  const binaryFiles = runtime.assetSnapshot();
+  const known = [
+    ...Object.keys(textFiles),
+    ...Object.keys(binaryFiles),
+  ];
+  for (const source of sources) {
+    const present =
+      known.includes(source) ||
+      known.some((path) => path.startsWith(`${source}/`));
+    if (!present) {
+      return fail(`Compress ${output}`, `No project files under ${source}`);
+    }
+  }
+
+  const entries: Zippable = {};
+  let entryCount = 0;
+  let sourceBytes = 0;
+
+  const addEntry = (path: string, data: Uint8Array, level: 0 | 6) => {
+    if (path === output) return;
+    if (!sources.some((source) => isUnder(path, source))) return;
+    const name = path.replace(/^\/+/, "");
+    if (!name) return;
+    // Text is worth deflating; images/video/models are already compressed.
+    entries[name] = [data, { level }];
+    entryCount += 1;
+    sourceBytes += data.byteLength;
+  };
+
+  for (const [path, content] of Object.entries(textFiles)) {
+    addEntry(path, strToU8(content), 6);
+  }
+  for (const [path, data] of Object.entries(binaryFiles)) {
+    addEntry(path, data, 0);
+  }
+
+  if (entryCount === 0) {
+    return fail(`Compress ${output}`, "Nothing matched those sources");
+  }
+  if (entryCount > MAX_ZIP_ENTRIES) {
+    return fail(
+      `Compress ${output}`,
+      `Too many files (${entryCount}); the limit is ${MAX_ZIP_ENTRIES}`,
+    );
+  }
+  if (sourceBytes > MAX_PROJECT_BYTES) {
+    return fail(
+      `Compress ${output}`,
+      `Sources total ${sizeLabel(sourceBytes)}; the project limit is ${sizeLabel(MAX_PROJECT_BYTES)}`,
+    );
+  }
+
+  let archive: Uint8Array;
+  try {
+    archive = zipSync(entries, { level: 6 });
+  } catch (error) {
+    return fail(
+      `Compress ${output}`,
+      `Could not build the archive: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+
+  try {
+    runtime.writeAsset(output, archive);
+  } catch (error) {
+    return fail(
+      `Compress ${output}`,
+      error instanceof Error ? error.message : String(error),
+    );
+  }
+  const persisted = await persistPublicAsset(output, archive);
+  useWorkspaceStore.getState().refresh();
+  runtime.log(
+    "info",
+    `Agent compressed ${entryCount} files into ${output} (${sizeLabel(archive.byteLength)})`,
+  );
+
+  return {
+    output:
+      `Created ${output}: ${entryCount} files, ${sizeLabel(archive.byteLength)} ` +
+      `compressed from ${sizeLabel(sourceBytes)}.${
+        persisted ? "" : " It could not be mirrored to OPFS and may not survive a reload."
+      }`,
+    summary: `Compressed ${entryCount} file${entryCount === 1 ? "" : "s"} into ${
+      output.split("/").pop() ?? output
+    }`,
+    detail: `${sizeLabel(archive.byteLength)} · ${output}`,
+    status: "ok",
+    changed: true,
+    path: output,
+  };
+}
+
+/** Extract a .zip from /public into a project folder. */
+async function decompressZipTool(
+  args: Record<string, unknown>,
+): Promise<AgentToolOutcome> {
+  const resolved = resolvePathArg(args.path);
+  if ("error" in resolved) return fail("Extract failed", resolved.error);
+  const zipPath = resolved.path;
+
+  if (!zipPath.toLowerCase().endsWith(".zip")) {
+    return fail(`Extract ${zipPath}`, "Expected a .zip file");
+  }
+  if (!runtime.isBinaryAsset(zipPath)) {
+    return fail(
+      `Extract ${zipPath}`,
+      "That path is not a binary .zip asset. Upload it to /public or create it with compress_zip first.",
+    );
+  }
+  const archive = runtime.readAsset(zipPath);
+  if (!archive) return fail(`Extract ${zipPath}`, "Could not read the archive");
+
+  const destinationArg =
+    typeof args.destination === "string" && args.destination.trim()
+      ? args.destination
+      : defaultZipDestination(zipPath);
+  const destinationRes = resolvePathArg(destinationArg, true);
+  if ("error" in destinationRes) {
+    return fail("Extract failed", destinationRes.error);
+  }
+  const destination =
+    destinationRes.path === "/" ? "/" : destinationRes.path.replace(/\/+$/, "");
+  const stripRoot = args.strip_root === true;
+
+  let oversized: string | null = null;
+  let extractedBytes = 0;
+  let extracted: Record<string, Uint8Array>;
+  try {
+    extracted = unzipSync(archive, {
+      filter: (entry) => {
+        if (entry.name.endsWith("/")) return false;
+        if (entry.originalSize > MAX_ATTACHMENT_BYTES) {
+          oversized = entry.name;
+          return false;
+        }
+        extractedBytes += entry.originalSize;
+        if (extractedBytes > MAX_PROJECT_BYTES) {
+          oversized = "total";
+          return false;
+        }
+        return true;
+      },
+    });
+  } catch (error) {
+    return fail(
+      `Extract ${zipPath}`,
+      `That file is not a readable ZIP: ${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
+  }
+
+  if (oversized) {
+    return fail(
+      `Extract ${zipPath}`,
+      oversized === "total"
+        ? `Extracted files exceed the ${sizeLabel(MAX_PROJECT_BYTES)} project limit`
+        : `${oversized} is larger than the ${sizeLabel(MAX_ATTACHMENT_BYTES)} per-file limit`,
+    );
+  }
+
+  const written: string[] = [];
+  let textCount = 0;
+  let binaryCount = 0;
+  let failedWrites = 0;
+  let reloadPreview = false;
+
+  for (const [rawName, data] of Object.entries(extracted)) {
+    if (rawName.startsWith("__MACOSX/") || rawName.endsWith(".DS_Store")) {
+      continue;
+    }
+    const relative = sanitizeZipEntry(rawName, stripRoot);
+    if (!relative) continue;
+
+    const target = destination === "/" ? `/${relative}` : `${destination}/${relative}`;
+    if (target === "/node_modules" || target.startsWith("/node_modules/")) {
+      continue;
+    }
+
+    const file = classifyFile(relative, data);
+    try {
+      if (file.kind === "text") {
+        runtime.createFile(target, file.text);
+        textCount += 1;
+        if (target.endsWith(".html")) reloadPreview = true;
+      } else {
+        runtime.writeAsset(target, file.bytes);
+        await persistPublicAsset(target, file.bytes);
+        binaryCount += 1;
+      }
+      written.push(target);
+    } catch {
+      failedWrites += 1;
+    }
+  }
+
+  if (written.length === 0) {
+    return fail(`Extract ${zipPath}`, "The archive contained no usable files");
+  }
+
+  useWorkspaceStore.getState().refresh();
+  if (reloadPreview) runtime.requestPreviewReload();
+  runtime.log(
+    "info",
+    `Agent extracted ${written.length} files from ${zipPath} into ${destination}`,
+  );
+
+  const sample = written.slice(0, 8).join("\n");
+  const more =
+    written.length > 8 ? `\n… ${written.length - 8} more files` : "";
+  return {
+    output:
+      `Extracted ${written.length} file${written.length === 1 ? "" : "s"} ` +
+      `(${textCount} text, ${binaryCount} binary) into ${destination}.\n` +
+      `${sample}${more}${
+        failedWrites > 0 ? `\n${failedWrites} files could not be written.` : ""
+      }`,
+    summary: `Extracted ${written.length} file${written.length === 1 ? "" : "s"} into ${
+      destination.split("/").pop() || destination
+    }`,
+    detail: `${sizeLabel(extractedBytes)} · ${destination}`,
+    status: "ok",
+    changed: true,
+    path: destination,
+  };
+}
+
 export const AGENT_TOOLS: AgentToolDefinition[] = [
   {
     type: "function",
@@ -516,6 +841,60 @@ export const AGENT_TOOLS: AgentToolDefinition[] = [
   {
     type: "function",
     function: {
+      name: "compress_zip",
+      description:
+        "Create a ZIP archive from project files and folders, including binary public assets. Entry names keep their project-relative path (leading / removed). The archive must be written under /public/ so it is served and survives reloads.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: {
+            type: "string",
+            description:
+              "Absolute output path under /public/ ending in .zip, e.g. /public/attachments/project.zip",
+          },
+          sources: {
+            type: "array",
+            description:
+              'Absolute files or folders to include. Defaults to ["/"] (the whole project).',
+            items: { type: "string" },
+          },
+        },
+        required: ["path"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "decompress_zip",
+      description:
+        "Extract a ZIP stored under /public into a project folder. Parent folders are created and existing files are overwritten. Use strip_root when every entry is wrapped in one top-level folder.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: {
+            type: "string",
+            description:
+              "Absolute path to the .zip under /public/, e.g. /public/attachments/project.zip",
+          },
+          destination: {
+            type: "string",
+            description:
+              "Absolute destination folder. Defaults to a folder named after the archive, beside it.",
+          },
+          strip_root: {
+            type: "boolean",
+            description:
+              "Drop the first path segment from every entry (default false).",
+          },
+        },
+        required: ["path"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "todo_write",
       description:
         "Replace the whole visible task plan. Send the complete list every time. Use this for multi-step work, mark the current task in_progress, and mark tasks completed as soon as they finish.",
@@ -577,6 +956,10 @@ export async function executeAgentTool(
       return searchTool(args);
     case "run_bash":
       return runBashTool(args);
+    case "compress_zip":
+      return compressZipTool(args);
+    case "decompress_zip":
+      return decompressZipTool(args);
     case "todo_write":
       return fail(name, "todo_write is handled by the agent store");
     default:
@@ -623,6 +1006,10 @@ export function describeToolCall(call: AgentToolCall): ToolCallPreview {
         name,
         summary: `Run ${typeof args.command === "string" ? args.command : "command"}`,
       };
+    case "compress_zip":
+      return { name, summary: `Compress into ${path ?? "zip"}`, path };
+    case "decompress_zip":
+      return { name, summary: `Extract ${path ?? "zip"}`, path };
     case "todo_write":
       return { name, summary: "Update the task plan" };
     default:
@@ -658,6 +1045,8 @@ Tools:
 - list_files(path): list a directory.
 - search(query, max_results?): search every project file for a case-insensitive keyword or phrase; returns path:line:text matches. Use this to locate symbols or usages across files.
 - run_bash(command): run a command in the virtual shell.
+- compress_zip(path, sources?): write a .zip under /public from project files or folders, including binary public assets.
+- decompress_zip(path, destination?, strip_root?): extract a .zip from /public into the project.
 - todo_write(todos): replace the visible task plan. The UI renders this list live.
 
 Rules:
@@ -665,6 +1054,7 @@ Rules:
 - For work with more than one step, call todo_write first with the complete plan, mark the task you are working on in_progress, and mark each task completed as soon as it is done. Keep exactly one task in_progress unless the work is genuinely parallel.
 - Files are persisted in OPFS under sandbox/<sandbox-id>/projects/<project-id>/. Treat the virtual file system as the source of truth.
 - Paths are absolute (start with /). Never touch node_modules.
+- ZIP output must be written under /public/ (for example /public/attachments/bundle.zip); binary files elsewhere are not persisted or served.
 - Relative imports MUST include the file extension, e.g. import App from './App.tsx' and import './styles.css'. The in-browser server does not resolve extensionless imports.
 - React, Zustand, three, and Tailwind CSS ('@tailwindcss/browser', when mapped by the project) come from an import map. Do NOT import any other npm package and do not add dependencies; there is no npm install in the preview. Use Zustand for shared React state, and prefer Tailwind utilities for new UI. The starter's primary color is Tiffany Blue: use 'bg-primary', 'text-primary', or '--ef-primary' (#0abab5). Otherwise style with plain CSS in /src/styles.css or inline styles.
 - Keep /index.html as the entry; do not replace its module script or add external scripts.
