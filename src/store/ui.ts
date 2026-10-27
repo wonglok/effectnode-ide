@@ -51,6 +51,7 @@ interface UiState {
   creditsOpen: boolean;
   newProjectOpen: boolean;
   projectSwitcherOpen: boolean;
+  buildOpen: boolean;
   prompt: PromptRequest | null;
   confirm: ConfirmRequest | null;
   toasts: Toast[];
@@ -76,6 +77,7 @@ interface UiState {
   openNewProject: () => void;
   closeNewProject: () => void;
   setProjectSwitcherOpen: (open: boolean) => void;
+  setBuildOpen: (open: boolean) => void;
   openPrompt: (request: PromptRequest) => void;
   closePrompt: () => void;
   openConfirm: (request: ConfirmRequest) => void;
@@ -104,6 +106,7 @@ export const useUiStore = create<UiState>()(
       creditsOpen: false,
       newProjectOpen: false,
       projectSwitcherOpen: false,
+      buildOpen: false,
       prompt: null,
       confirm: null,
       toasts: [],
@@ -153,6 +156,7 @@ export const useUiStore = create<UiState>()(
       openNewProject: () => set({ newProjectOpen: true }),
       closeNewProject: () => set({ newProjectOpen: false }),
       setProjectSwitcherOpen: (open) => set({ projectSwitcherOpen: open }),
+      setBuildOpen: (open) => set({ buildOpen: open }),
       openPrompt: (request) => set({ prompt: request }),
       closePrompt: () => set({ prompt: null }),
       openConfirm: (request) => set({ confirm: request }),

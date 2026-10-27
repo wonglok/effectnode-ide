@@ -26,6 +26,10 @@ export interface ProjectBuildOptions {
   install?: boolean;
   /** Abort long installs/builds. */
   signal?: AbortSignal;
+  /** Capture the contents of /dist after a successful build. */
+  captureDist?: boolean;
+  /** High-level phase updates for build UIs. */
+  onProgress?: (message: string) => void;
 }
 
 export interface ProjectBuildResult {
@@ -41,6 +45,8 @@ export interface ProjectBuildResult {
   timedOut: boolean;
   /** Build-only packages added to the container, not to the project. */
   typePackages: string[];
+  /** dist files keyed by path relative to /dist, when captureDist was set. */
+  distFiles?: Record<string, Uint8Array>;
 }
 
 const DEFAULT_COMMAND = "npm run build";
@@ -200,9 +206,13 @@ async function main() {
   const vite = require('/node_modules/vite/dist/node/index.js');
   const result = await vite.build(config);
 
-  const outputs = Array.isArray(result.output)
-    ? result.output.reduce(function (all, item) { return all.concat(item.output || []); }, [])
-    : result.output || [];
+  // vite.build resolves to a RollupOutput (or an array of them for multiple
+  // builds), whose .output holds the chunks and assets. Flatten the wrapper
+  // array, not the chunk array itself.
+  const bundles = Array.isArray(result) ? result : [result];
+  const outputs = bundles.reduce(function (all, bundle) {
+    return all.concat(bundle.output || []);
+  }, []);
   for (const file of outputs) {
     const target = outRoot + '/' + file.fileName;
     const slash = target.lastIndexOf('/');
@@ -338,6 +348,43 @@ function summarizeOutputDir(vfs: VirtualFS, root: string): {
   };
   walk(root);
   return { files, bytes };
+}
+
+/** Snapshot a container directory, keyed by its path relative to `root`. */
+function readDirectory(
+  vfs: VirtualFS,
+  root: string,
+): Record<string, Uint8Array> {
+  const files: Record<string, Uint8Array> = {};
+
+  const walk = (dir: string, prefix: string) => {
+    let names: string[] = [];
+    try {
+      names = vfs.readdirSync(dir);
+    } catch {
+      return;
+    }
+    for (const name of names) {
+      const path = `${dir}/${name}`;
+      try {
+        const stats = vfs.statSync(path);
+        if (stats.isDirectory()) {
+          walk(path, `${prefix}${name}/`);
+        } else {
+          const contents = vfs.readFileSync(path);
+          files[`${prefix}${name}`] =
+            typeof contents === "string"
+              ? new TextEncoder().encode(contents)
+              : contents;
+        }
+      } catch {
+        // Skip entries that disappear mid-walk.
+      }
+    }
+  };
+
+  walk(root, "");
+  return files;
 }
 
 /**
@@ -508,6 +555,7 @@ async function runBuild(
 ): Promise<ProjectBuildResult> {
   const command = options.command?.trim() || DEFAULT_COMMAND;
   const started = Date.now();
+  options.onProgress?.("Syncing project files into the build container");
   const target = await prepareContainer();
   const { fileCount, packageJson } = syncProject(target);
 
@@ -527,6 +575,7 @@ async function runBuild(
   const typePackages: string[] = [];
 
   if (shouldInstall) {
+    options.onProgress?.("Installing dependencies in the browser");
     if (packageChanged && !missingModules) {
       removeEntry(vfs, "/node_modules");
     }
@@ -644,6 +693,7 @@ async function runBuild(
   }
 
   prepareVite(vfs);
+  options.onProgress?.(`Running ${command}`);
 
   const result = await target.run(command, {
     cwd: "/",
@@ -661,6 +711,12 @@ async function runBuild(
     ).toFixed(1)} kB)`;
   }
 
+  let distFiles: Record<string, Uint8Array> | undefined;
+  if (options.captureDist && result.exitCode === 0) {
+    options.onProgress?.("Collecting dist files");
+    distFiles = readDirectory(vfs, "/dist");
+  }
+
   return {
     ok: result.exitCode === 0,
     exitCode: result.exitCode,
@@ -673,6 +729,7 @@ async function runBuild(
     fileCount,
     timedOut: Boolean(options.signal?.aborted),
     typePackages,
+    distFiles,
   };
 }
 

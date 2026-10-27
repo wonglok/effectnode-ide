@@ -1925,6 +1925,211 @@ code {
   color: var(--faint);
 }
 
+/* ── Build dialog ──────────────────────────────────────────── */
+
+.build-intro {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.build-intro code {
+  padding: 1px 4px;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  background: var(--bg-elevated);
+  color: var(--accent-soft);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+}
+
+.build-status {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+}
+
+.build-status.is-building {
+  border-color: var(--accent-line);
+  background: var(--accent-wash);
+}
+
+.build-status.is-error {
+  border-color: rgba(255, 115, 105, 0.32);
+  background: rgba(255, 115, 105, 0.06);
+}
+
+.build-status-icon {
+  flex: 0 0 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--panel-2);
+  color: var(--accent);
+}
+
+.build-status.is-error .build-status-icon {
+  color: var(--red);
+  background: rgba(255, 115, 105, 0.1);
+}
+
+.build-status-copy {
+  min-width: 0;
+}
+
+.build-status-copy strong {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.build-status-copy p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.build-files {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+}
+
+.build-files-label {
+  margin-bottom: 6px;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.build-files-list {
+  max-height: 150px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.build-files-list code {
+  color: var(--accent-soft);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  overflow-wrap: anywhere;
+}
+
+.build-log {
+  max-height: 260px;
+  margin: 0 0 12px;
+  padding: 10px 11px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.build-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.build-deploy {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.build-deploy-label {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.build-deploy-copy {
+  margin: 6px 0 10px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.build-deploy-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.build-deploy-actions .ghost-button {
+  text-decoration: none;
+}
+
+.build-deploy-actions .build-deploy-link {
+  border-color: transparent;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  transition: filter 140ms ease, transform 100ms ease, box-shadow 140ms ease;
+}
+
+.build-deploy-actions .build-deploy-link:hover {
+  transform: translateY(-1px);
+}
+
+.build-deploy-actions .build-deploy-link:active {
+  transform: translateY(0);
+}
+
+.build-deploy-actions .build-deploy-link.is-vercel {
+  background: linear-gradient(135deg, #9db4ff 0%, #6a86ff 45%, #4a4de0 100%);
+  color: #f7f9ff;
+  box-shadow: 0 6px 20px rgba(106, 134, 255, 0.38);
+}
+
+.build-deploy-actions .build-deploy-link.is-vercel:hover {
+  background: linear-gradient(135deg, #b3c6ff 0%, #7f99ff 45%, #5c5dea 100%);
+  color: #ffffff;
+}
+
+.build-deploy-actions .build-deploy-link.is-netlify {
+  background: linear-gradient(135deg, #20e3d2 0%, #00c7b7 48%, #009e92 100%);
+  color: #03211e;
+  box-shadow: 0 6px 18px rgba(0, 199, 183, 0.28);
+}
+
+.build-deploy-actions .build-deploy-link.is-netlify:hover {
+  background: linear-gradient(135deg, #46f2e1 0%, #08d6c6 48%, #00aea1 100%);
+  color: #021512;
+}
+
+.build-deploy-external {
+  margin-left: 1px;
+  opacity: 0.62;
+}
+
 /* ── Credits dialog ────────────────────────────────────────── */
 
 .credits-intro {

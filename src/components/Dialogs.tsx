@@ -1,6 +1,14 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { X } from 'lucide-react';
+import {
+  Diamond,
+  ExternalLink,
+  Hammer,
+  LoaderCircle,
+  Triangle,
+  X,
+} from 'lucide-react';
+import { buildAndDownloadDistZip } from '@/lib/build-zip';
 import { useUiStore } from '@/store/ui';
 
 export function Modal({
@@ -216,6 +224,217 @@ export function ShortcutsDialog() {
 
       <div className="help-footnote">
         Built with open source · CREDIT in the status bar lists every project
+      </div>
+    </Modal>
+  );
+}
+
+type BuildPhase = 'idle' | 'building' | 'success' | 'error';
+
+interface BuildStats {
+  files: number;
+  bytes: number;
+  seconds: number;
+  installed: boolean;
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} kB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+export function BuildDialog() {
+  const open = useUiStore((state) => state.buildOpen);
+  const setOpen = useUiStore((state) => state.setBuildOpen);
+  const [phase, setPhase] = useState<BuildPhase>('idle');
+  const [message, setMessage] = useState('');
+  const [output, setOutput] = useState('');
+  const [files, setFiles] = useState<string[]>([]);
+  const [stats, setStats] = useState<BuildStats | null>(null);
+  const controllerRef = useRef<AbortController | null>(null);
+
+  if (!open) return null;
+
+  const building = phase === 'building';
+
+  const start = async () => {
+    if (building) return;
+
+    const controller = new AbortController();
+    controllerRef.current = controller;
+    setPhase('building');
+    setMessage('Preparing the in-browser build…');
+    setOutput('');
+    setFiles([]);
+    setStats(null);
+
+    const result = await buildAndDownloadDistZip({
+      signal: controller.signal,
+      onProgress: setMessage,
+    });
+
+    controllerRef.current = null;
+    setOutput(
+      [
+        result.installOutput
+          ? `── npm install ──\n${result.installOutput}`
+          : '',
+        result.output,
+      ]
+        .filter(Boolean)
+        .join('\n\n'),
+    );
+    setFiles(result.files);
+
+    if (result.ok) {
+      setPhase('success');
+      setMessage('Build complete');
+      setStats({
+        files: result.fileCount,
+        bytes: result.archiveBytes,
+        seconds: result.durationMs / 1000,
+        installed: result.installed,
+      });
+    } else if (result.cancelled) {
+      setPhase('idle');
+      setMessage('Build cancelled.');
+    } else {
+      setPhase('error');
+      setMessage(result.error ?? 'Build failed.');
+    }
+  };
+
+  const cancel = () => {
+    controllerRef.current?.abort();
+    setMessage('Cancelling…');
+  };
+
+  const statusTitle =
+    phase === 'building'
+      ? message
+      : phase === 'success'
+        ? 'Build complete'
+        : phase === 'error'
+          ? 'Build failed'
+          : 'Ready to build';
+
+  const statusDetail =
+    phase === 'building'
+      ? 'almostnode is compiling the project in this tab.'
+      : phase === 'success' && stats
+        ? `${stats.files} files · ${formatBytes(stats.bytes)} · ${stats.seconds.toFixed(
+            1,
+          )}s${stats.installed ? ' · dependencies installed' : ''}`
+        : phase === 'error'
+          ? message
+          : message ||
+            'The first build installs dependencies in this tab and can take a minute.';
+
+  return (
+    <Modal
+      title="Build"
+      subtitle="Compile the Vite project with almostnode and download dist/."
+      onClose={() => setOpen(false)}
+      width={540}
+      footer={
+        <button className="ghost-button" onClick={() => setOpen(false)}>
+          Close
+        </button>
+      }
+    >
+      <p className="build-intro">
+        Runs <code>npm run build</code> in almostnode&apos;s browser container,
+        then downloads the compiled HTML, JS, CSS and public assets from{" "}
+        <code>dist/</code> at the archive root — ready for a static host or
+        Vercel Drop.
+      </p>
+
+      <div className={`build-status is-${phase}`} role="status" aria-live="polite">
+        <span className="build-status-icon">
+          {building ? (
+            <LoaderCircle size={15} className="spin" />
+          ) : (
+            <Hammer size={15} />
+          )}
+        </span>
+        <div className="build-status-copy">
+          <strong>{statusTitle}</strong>
+          <p>{statusDetail}</p>
+        </div>
+      </div>
+
+      {files.length > 0 ? (
+        <div className="build-files">
+          <div className="build-files-label">
+            Included files ({files.length})
+          </div>
+          <ul className="build-files-list">
+            {files.map((file) => (
+              <li key={file}>
+                <code>{file}</code>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {output ? (
+        <pre className="build-log" aria-label="Build output">
+          {output}
+        </pre>
+      ) : null}
+
+      <div className="build-actions">
+        <button
+          className="solid-button small"
+          onClick={() => void start()}
+          disabled={building}
+        >
+          {building ? (
+            <LoaderCircle size={14} className="spin" />
+          ) : (
+            <Hammer size={14} />
+          )}
+          {building ? 'Building…' : 'Build & download ZIP'}
+        </button>
+        {building ? (
+          <button className="ghost-button" onClick={cancel}>
+            Cancel
+          </button>
+        ) : null}
+      </div>
+
+      <div className="build-deploy">
+        <div className="build-deploy-label">Deployment to cloud</div>
+        <p className="build-deploy-copy">
+          Download the ZIP above, then drop it on a static host — no CLI or
+          account setup required.
+        </p>
+        <div className="build-deploy-actions">
+          <a
+            className="ghost-button build-deploy-link is-vercel"
+            href="https://vercel.com/drop"
+            target="_blank"
+            rel="noreferrer"
+            title="Open Vercel Drop in a new tab"
+          >
+            <Triangle size={13} />
+            Vercel Drop
+            <ExternalLink size={11} className="build-deploy-external" />
+          </a>
+          <a
+            className="ghost-button build-deploy-link is-netlify"
+            href="https://app.netlify.com/drop"
+            target="_blank"
+            rel="noreferrer"
+            title="Open Netlify Drop in a new tab"
+          >
+            <Diamond size={13} />
+            Netlify Drop
+            <ExternalLink size={11} className="build-deploy-external" />
+          </a>
+        </div>
       </div>
     </Modal>
   );
