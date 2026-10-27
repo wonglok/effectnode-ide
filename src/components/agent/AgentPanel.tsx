@@ -13,6 +13,7 @@ import {
   CircleAlert,
   FileText,
   FolderOpen,
+  Hammer,
   Image,
   ListChecks,
   ListPlus,
@@ -20,6 +21,7 @@ import {
   Paperclip,
   Pencil,
   Play,
+  Plug,
   RefreshCw,
   Search,
   Sparkles,
@@ -42,6 +44,7 @@ import {
   type AgentEmptyResponseRetry,
   type AgentToolEvent,
 } from "@/store/agent";
+import { useMcpStore } from "@/store/mcp";
 import { useProjectStore } from "@/store/projects";
 import { useRuntimeStore } from "@/store/runtime";
 import { useUiStore } from "@/store/ui";
@@ -195,11 +198,17 @@ function toolVisual(name: string): {
   if (name === "bash" || name === "pwsh" || name === "run_bash") {
     return { icon: <SquareTerminal size={13} />, kind: "shell", label: "bash" };
   }
+  if (name === "build_project") {
+    return { icon: <Hammer size={13} />, kind: "shell", label: "build" };
+  }
   if (name === "search" || name === "glob" || name === "list_files") {
     return { icon: <Search size={13} />, kind: "search", label: name };
   }
   if (name === "todo_write") {
     return { icon: <ListChecks size={13} />, kind: "todo", label: "plan" };
+  }
+  if (name.startsWith("vercel__")) {
+    return { icon: <Plug size={13} />, kind: "other", label: "vercel" };
   }
   return { icon: <Sparkles size={13} />, kind: "other", label: name };
 }
@@ -581,6 +590,13 @@ export function AgentPanel() {
   const closeConfirm = useUiStore((state) => state.closeConfirm);
   const toast = useUiStore((state) => state.toast);
   const projectId = useProjectStore((state) => state.id);
+  const mcpStatus = useMcpStore((state) => state.status);
+  const mcpTools = useMcpStore((state) => state.tools);
+  const mcpError = useMcpStore((state) => state.error);
+  const initMcp = useMcpStore((state) => state.init);
+  const connectMcp = useMcpStore((state) => state.connect);
+  const cancelMcpConnect = useMcpStore((state) => state.cancelConnect);
+  const disconnectMcp = useMcpStore((state) => state.disconnect);
 
   const [draft, setDraft] = useState("");
   const [attachments, setAttachments] = useState<AttachmentDraft[]>([]);
@@ -757,6 +773,10 @@ export function AgentPanel() {
   }, [init]);
 
   useEffect(() => {
+    void initMcp();
+  }, [initMcp]);
+
+  useEffect(() => {
     const element = textareaRef.current;
     if (!element) return;
     element.style.height = "auto";
@@ -827,6 +847,40 @@ export function AgentPanel() {
     });
   };
 
+  const mcpTitle =
+    mcpStatus === "connected"
+      ? `${mcpTools.length} Vercel tool${
+          mcpTools.length === 1 ? "" : "s"
+        } · click to disconnect`
+      : mcpStatus === "connecting"
+        ? "Waiting for Vercel sign-in… click to cancel"
+        : mcpStatus === "error"
+          ? (mcpError ?? "Vercel MCP error — click to retry")
+          : "Connect Vercel MCP (OAuth)";
+
+  const onMcpClick = () => {
+    if (mcpStatus === "connecting") {
+      cancelMcpConnect();
+      return;
+    }
+    if (mcpStatus === "connected") {
+      openConfirm({
+        title: "Disconnect Vercel MCP?",
+        message: `The agent will stop seeing ${mcpTools.length} Vercel tool${
+          mcpTools.length === 1 ? "" : "s"
+        }. Your Vercel account and deployments are not changed.`,
+        confirmLabel: "Disconnect",
+        destructive: true,
+        onConfirm: () => {
+          closeConfirm();
+          void disconnectMcp();
+        },
+      });
+      return;
+    }
+    void connectMcp();
+  };
+
   return (
     <section className="agent-panel">
       <div className="agent-strip">
@@ -852,6 +906,18 @@ export function AgentPanel() {
         ) : null}
 
         <div className="agent-strip-actions">
+          <button
+            type="button"
+            className={`agent-mcp-chip is-${mcpStatus}`}
+            onClick={onMcpClick}
+            title={mcpTitle}
+          >
+            <span className="agent-mcp-dot" />
+            <span className="agent-mcp-label">Vercel MCP</span>
+            {mcpStatus === "connected" ? (
+              <span className="agent-mcp-count">{mcpTools.length}</span>
+            ) : null}
+          </button>
           <span
             className="agent-model-chip"
             title={`Claude harness model · all tools auto-approved · proxy ${status?.proxy ?? "/api/anthropic"}`}
@@ -907,7 +973,17 @@ export function AgentPanel() {
                 <span>·</span>
                 <span>
                   claude-messages-sdk · tools: read · write · edit · list ·
-                  shell · zip · plan
+                  shell · zip · build · plan
+                </span>
+                <span>·</span>
+                <span>
+                  {mcpStatus === "connected"
+                    ? `vercel mcp · ${mcpTools.length} tools`
+                    : mcpStatus === "connecting"
+                      ? "vercel mcp · connecting…"
+                      : mcpStatus === "error"
+                        ? "vercel mcp · reconnect"
+                        : "vercel mcp · off"}
                 </span>
               </div>
             </div>

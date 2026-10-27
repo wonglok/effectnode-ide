@@ -162,7 +162,8 @@ the upstream URL.
 
 The shared tool set is `read_file`, `write_file`, `replace_in_file`,
 `list_files`, `search` (case-insensitive keyword search across all files),
-`run_bash`, `compress_zip`, `decompress_zip`, and `todo_write`.
+`run_bash`, `compress_zip`, `decompress_zip`, `build_project`, and
+`todo_write`.
 
 `compress_zip` builds an archive from any project files or folders, text and
 binary (`public/` assets included), and writes it under `/public/` so the
@@ -170,6 +171,42 @@ preview can serve it and OPFS keeps it across reloads. `decompress_zip` extracts
 an archive from `/public/` into the project, creating folders and overwriting
 existing files; both reject `..` paths, absolute entries, `node_modules`, and
 anything over the 20 MB per-file / 50 MB total limits.
+
+`build_project` verifies the project the way CI would. It mirrors the current
+files and public assets into an almostnode `createContainer()` and installs the
+project's dependencies, devDependencies included, when `node_modules` is missing
+or `package.json` changed. Direct dependency ranges are pinned after the tree
+resolves, because almostnode's flat resolver lets a peer range pick a newer
+major. It then runs the requested command, `npm run build` by default; `npm test`
+and other npm scripts work the same way. The container caches `node_modules`
+between builds, runs one build at a time, aborts the command after eight minutes,
+and returns the tail of stdout/stderr with the exit code. Build output stays
+inside the container; project files are never modified by the tool. The first
+build is slow because it installs the project's dependencies in the browser.
+Note that almostnode's Node runtime cannot execute Vite's CLI (it contains
+top-level `await`), so `vite build` is reported as an environment error; `tsc`,
+simple npm scripts, and Node scripts run normally.
+
+### Vercel MCP
+
+The agent can also call Vercel's remote MCP server, <https://mcp.vercel.com>.
+Click the **Vercel MCP** chip in the agent header to connect:
+
+1. Forge registers this origin as a public OAuth client with Vercel (dynamic
+   client registration) and opens Vercel's sign-in in a popup using PKCE.
+2. The callback lands on `/?mcp=callback`, forwards the authorization code to
+   the opener that holds the verifier, and closes the popup.
+3. The opener exchanges the code for an access token and a refresh token. Both
+   stay in this browser's `localStorage` and refresh automatically.
+
+Each Vercel tool is exposed to Claude as `vercel__<name>` and runs against the
+user's Vercel account. Because `mcp.vercel.com` does not send CORS headers, the
+browser sends JSON-RPC through `POST /api/mcp/vercel`: the route requires the
+Forge JWT, takes the Vercel token from `x-mcp-token`, forwards it only to the
+fixed upstream, and never logs it. Disconnecting revokes the tokens when Vercel
+accepts the revocation and always removes the local copy. The agent is
+auto-approved for these tools too, so connect only an account you are
+comfortable letting the agent act on.
 
 Before the first step of every user-submitted prompt, Forge flushes the editor
 and writes a `Before · <prompt>` version containing the current files and agent
@@ -324,6 +361,7 @@ Project code and the agent transcript live in the browser's OPFS.
 | GET    | `/api/agent/status` | Claude harness + credential status       |
 | POST   | `/api/anthropic/v1/messages` | JWT-authenticated Claude harness proxy |
 | POST   | `/api/anthropic/v1/messages/count_tokens` | Token-count passthrough |
+| POST   | `/api/mcp/vercel` | JWT-authenticated Vercel MCP transport (`x-mcp-token`) |
 
 All routes except `GET /api/auth` and `POST /api/auth` require
 `Authorization: Bearer <token>` when `FORGE_PASSWORD` is configured. The

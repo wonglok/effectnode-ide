@@ -23,6 +23,12 @@ import {
   executeAgentTool,
   type AgentToolOutcome,
 } from "./agent-tools";
+import {
+  callVercelMcpTool,
+  getVercelMcpAnthropicTools,
+  VERCEL_MCP_TOOL_PREFIX,
+} from "./mcp-client";
+import { runtime } from "./runtime";
 
 const TODO_STATUSES = new Set(["pending", "in_progress", "completed"]);
 
@@ -407,7 +413,6 @@ export function createClaudeSession(
 ): ClaudeSession {
   const client = createClient();
   const messages = historyToMessages(options.history);
-  const tools = buildTools();
   const model = options.model || CLAUDE_AGENT.model;
   const adaptiveThinking = usesAdaptiveThinking(model);
   const controller = new AbortController();
@@ -428,6 +433,17 @@ export function createClaudeSession(
     name: string,
     input: Record<string, unknown>,
   ): Promise<AgentToolOutcome> => {
+    if (name.startsWith(VERCEL_MCP_TOOL_PREFIX)) {
+      const result = await callVercelMcpTool(name, input);
+      return {
+        output: result.text,
+        summary: `Vercel · ${result.name.replace(/_/g, " ")}`,
+        detail: result.isError ? "Vercel MCP reported an error" : "Vercel MCP",
+        status: result.isError ? "error" : "ok",
+        changed: false,
+      };
+    }
+
     if (name === "todo_write") {
       const todos = parseTodos(input);
       if (!todos) {
@@ -454,6 +470,34 @@ export function createClaudeSession(
   };
 
   const run = async (): Promise<void> => {
+    const localTools = buildTools();
+    let mcpTools: Awaited<ReturnType<typeof getVercelMcpAnthropicTools>> = [];
+    try {
+      mcpTools = await getVercelMcpAnthropicTools();
+    } catch (error) {
+      runtime.log(
+        "warn",
+        `Vercel MCP tools unavailable: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
+
+    const tools: Anthropic.Tool[] = [
+      ...localTools,
+      ...mcpTools.map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        input_schema: tool.input_schema as Anthropic.Tool["input_schema"],
+      })),
+    ];
+    const systemPrompt =
+      mcpTools.length > 0
+        ? `${options.systemPrompt}
+
+Vercel MCP: ${mcpTools.length} remote tools are connected (names start with ${VERCEL_MCP_TOOL_PREFIX}). They run against the user's Vercel account through https://mcp.vercel.com. Use them for Vercel projects, deployments, domains, logs, environment variables, and documentation. Tool results are text; large results are truncated.`
+        : options.systemPrompt;
+
     while (!controller.signal.aborted) {
       emit({ type: "turn_start" });
       turns += 1;
@@ -483,7 +527,7 @@ export function createClaudeSession(
         {
           model,
           max_tokens: CLAUDE_AGENT.maxTokens,
-          system: options.systemPrompt,
+          system: systemPrompt,
           messages,
           tools,
           thinking,

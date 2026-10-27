@@ -3,7 +3,13 @@ import type { AgentToolCall, AgentToolDefinition } from "../../shared/types";
 import { useUiStore } from "@/store/ui";
 import { useWorkspaceStore } from "@/store/workspace";
 import { classifyFile } from "./binary-file";
+import {
+  buildErrorMessage,
+  buildProject,
+  type ProjectBuildResult,
+} from "./build-container";
 import { buildFileTree, flattenLeaves } from "./file-tree";
+import { VERCEL_MCP_TOOL_PREFIX } from "./mcp-client";
 import { getBoundProjectId, opfsProjectStore } from "./opfs";
 import { joinPath, normalizePath } from "./paths";
 import { MAX_ATTACHMENT_BYTES, MAX_PROJECT_BYTES } from "./project-limits";
@@ -22,6 +28,8 @@ const MAX_SEARCH_FILE_CHARS = 500_000;
 const MAX_ZIP_ENTRIES = 2_000;
 /** Archives the agent creates must live here so they persist and are served. */
 const ZIP_OUTPUT_ROOT = "/public/";
+const MAX_BUILD_OUTPUT_CHARS = 20_000;
+const BUILD_TIMEOUT_MS = 8 * 60_000;
 const READ_ONLY_COMMANDS = new Set([
   "ls",
   "cat",
@@ -90,6 +98,12 @@ function truncate(text: string, limit: number): string {
   return (
     text.slice(0, limit) + `\n… [truncated ${text.length - limit} characters]`
   );
+}
+
+/** Build logs put failures at the end, so keep the tail rather than the head. */
+function tail(text: string, limit: number): string {
+  if (text.length <= limit) return text;
+  return `… [truncated ${text.length - limit} characters]\n${text.slice(-limit)}`;
 }
 
 function readFileTool(args: Record<string, unknown>): AgentToolOutcome {
@@ -726,6 +740,89 @@ async function decompressZipTool(
   };
 }
 
+function buildReport(result: ProjectBuildResult): string {
+  const seconds = (result.durationMs / 1000).toFixed(1);
+  const lines: string[] = [
+    `$ ${result.command}  ·  exit ${result.exitCode}  ·  ${seconds}s  ·  ${result.fileCount} project files mirrored`,
+  ];
+  if (result.installed) {
+    const install = result.installOutput.trim();
+    lines.push(
+      result.phase === "install"
+        ? `npm install failed:\n${tail(install, MAX_BUILD_OUTPUT_CHARS)}`
+        : `npm install completed.`,
+    );
+  }
+  if (result.timedOut) {
+    lines.push("The command was stopped after the build timeout or cancel.");
+  } else if (result.output) {
+    lines.push(result.output);
+  }
+  lines.push(
+    "Build output is container-only; project files were not modified by this tool.",
+  );
+  return tail(lines.join("\n\n"), MAX_BUILD_OUTPUT_CHARS);
+}
+
+async function buildProjectTool(
+  args: Record<string, unknown>,
+): Promise<AgentToolOutcome> {
+  const rawCommand =
+    typeof args.command === "string" ? args.command.trim() : "";
+  if (rawCommand.length > 200) {
+    return fail(
+      "Build failed",
+      "The command is too long (max 200 characters).",
+    );
+  }
+  const install =
+    typeof args.install === "boolean" ? args.install : undefined;
+
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, BUILD_TIMEOUT_MS);
+
+  try {
+    const result = await buildProject({
+      command: rawCommand || undefined,
+      install,
+      signal: controller.signal,
+    });
+    const report = buildReport({
+      ...result,
+      timedOut: timedOut || result.timedOut,
+    });
+    const seconds = (result.durationMs / 1000).toFixed(1);
+    runtime.log(
+      result.ok ? "info" : "warn",
+      `Agent build: ${result.command} exited ${result.exitCode} in ${seconds}s`,
+    );
+    return {
+      output: report,
+      summary: `${result.ok ? "Build passed" : "Build failed"} · ${result.command}`,
+      detail: `exit ${result.exitCode} · ${seconds}s${
+        result.installed ? " · installed" : ""
+      }`,
+      status: result.ok ? "ok" : "error",
+      changed: false,
+    };
+  } catch (error) {
+    const message = buildErrorMessage(error);
+    runtime.log("warn", `Agent build failed: ${message}`);
+    return fail(
+      timedOut ? "Build timed out" : "Build failed",
+      timedOut
+        ? `The build did not finish within ${BUILD_TIMEOUT_MS / 60_000} minutes.`
+        : message,
+    );
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export const AGENT_TOOLS: AgentToolDefinition[] = [
   {
     type: "function",
@@ -895,6 +992,29 @@ export const AGENT_TOOLS: AgentToolDefinition[] = [
   {
     type: "function",
     function: {
+      name: "build_project",
+      description:
+        "Build the project in an in-browser Node container. Mirrors the project files and public assets into an almostnode container, runs npm install when node_modules is missing or package.json changed, then runs the command (default npm run build). Use it to verify the project compiles; it never writes build output back to the project.",
+      parameters: {
+        type: "object",
+        properties: {
+          command: {
+            type: "string",
+            description:
+              "Command to run after install. Defaults to `npm run build`; `npm test` and other npm scripts also work.",
+          },
+          install: {
+            type: "boolean",
+            description:
+              "true forces npm install before the command, false skips it. Omit to install only when node_modules is missing or package.json changed.",
+          },
+        },
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "todo_write",
       description:
         "Replace the whole visible task plan. Send the complete list every time. Use this for multi-step work, mark the current task in_progress, and mark tasks completed as soon as they finish.",
@@ -960,6 +1080,8 @@ export async function executeAgentTool(
       return compressZipTool(args);
     case "decompress_zip":
       return decompressZipTool(args);
+    case "build_project":
+      return buildProjectTool(args);
     case "todo_write":
       return fail(name, "todo_write is handled by the agent store");
     default:
@@ -986,6 +1108,15 @@ export function describeToolCall(call: AgentToolCall): ToolCallPreview {
     // Fall through with an empty preview.
   }
 
+  if (name.startsWith(VERCEL_MCP_TOOL_PREFIX)) {
+    return {
+      name,
+      summary: `Vercel · ${name
+        .slice(VERCEL_MCP_TOOL_PREFIX.length)
+        .replace(/_/g, " ")}`,
+    };
+  }
+
   const path = typeof args.path === "string" ? args.path : undefined;
   switch (name) {
     case "read_file":
@@ -1010,6 +1141,13 @@ export function describeToolCall(call: AgentToolCall): ToolCallPreview {
       return { name, summary: `Compress into ${path ?? "zip"}`, path };
     case "decompress_zip":
       return { name, summary: `Extract ${path ?? "zip"}`, path };
+    case "build_project": {
+      const command =
+        typeof args.command === "string" && args.command.trim()
+          ? args.command.trim()
+          : "npm run build";
+      return { name, summary: `Build · ${command}` };
+    }
     case "todo_write":
       return { name, summary: "Update the task plan" };
     default:
@@ -1047,6 +1185,7 @@ Tools:
 - run_bash(command): run a command in the virtual shell.
 - compress_zip(path, sources?): write a .zip under /public from project files or folders, including binary public assets.
 - decompress_zip(path, destination?, strip_root?): extract a .zip from /public into the project.
+- build_project(command?, install?): run npm install (when needed) and the project build in an in-browser Node container. Defaults to \`npm run build\`; use \`npm test\` for tests. Build output stays in the container.
 - todo_write(todos): replace the visible task plan. The UI renders this list live.
 
 Rules:
@@ -1055,6 +1194,7 @@ Rules:
 - Files are persisted in OPFS under sandbox/<sandbox-id>/projects/<project-id>/. Treat the virtual file system as the source of truth.
 - Paths are absolute (start with /). Never touch node_modules.
 - ZIP output must be written under /public/ (for example /public/attachments/bundle.zip); binary files elsewhere are not persisted or served.
+- After a substantive change, run build_project once the project has a build script, and fix the errors it reports. Builds can take a while; do not call it after every small edit.
 - Relative imports MUST include the file extension, e.g. import App from './App.tsx' and import './styles.css'. The in-browser server does not resolve extensionless imports.
 - React, Zustand, three, and Tailwind CSS ('@tailwindcss/browser', when mapped by the project) come from an import map. Do NOT import any other npm package and do not add dependencies; there is no npm install in the preview. Use Zustand for shared React state, and prefer Tailwind utilities for new UI. The starter's primary color is Tiffany Blue: use 'bg-primary', 'text-primary', or '--ef-primary' (#0abab5). Otherwise style with plain CSS in /src/styles.css or inline styles.
 - Keep /index.html as the entry; do not replace its module script or add external scripts.
