@@ -2348,6 +2348,15 @@ code {
   white-space: nowrap;
 }
 
+.library-version-total {
+  margin-left: 4px;
+  padding-left: 9px;
+  border-left: 1px solid var(--line-strong);
+  color: var(--dim);
+  letter-spacing: 0.04em;
+  text-transform: none;
+}
+
 .library-version-create-controls {
   display: flex;
   align-items: center;

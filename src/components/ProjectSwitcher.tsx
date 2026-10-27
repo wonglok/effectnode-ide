@@ -76,6 +76,10 @@ export function ProjectSwitcher() {
   const filtered = projects.filter((project) =>
     project.name.toLowerCase().includes(query.trim().toLowerCase())
   );
+  const totalVersionBytes = versions.reduce(
+    (total, version) => total + version.bytes,
+    0
+  );
   const totalVersions = projects.reduce(
     (sum, project) => sum + project.versionCount,
     0
@@ -308,6 +312,16 @@ export function ProjectSwitcher() {
                 <div className="library-version-label">
                   <History size={12} />
                   <span>Version history</span>
+                  {versions.length > 0 ? (
+                    <span
+                      className="library-version-total"
+                      title="Total space these snapshots use in browser storage"
+                    >
+                      {versions.length} snapshot
+                      {versions.length === 1 ? '' : 's'} ·{' '}
+                      {bytesLabel(totalVersionBytes)}
+                    </span>
+                  ) : null}
                 </div>
                 <div className="library-version-create-controls">
                   <input
@@ -360,17 +374,32 @@ export function ProjectSwitcher() {
                           {version.hasAgentState ? (
                             <span
                               className="library-version-chat"
-                              title="Includes the agent transcript"
+                              title={`Includes the agent transcript${
+                                version.agentStateBytes
+                                  ? ` (${bytesLabel(version.agentStateBytes)})`
+                                  : ''
+                              }`}
                             >
                               + chat
                             </span>
                           ) : null}
                         </div>
-                        <div className="library-version-meta">
+                        <div
+                          className="library-version-meta"
+                          title={`Stored in OPFS — files ${bytesLabel(
+                            version.bytes - (version.agentStateBytes ?? 0)
+                          )}${
+                            version.agentStateBytes
+                              ? ` · transcript ${bytesLabel(
+                                  version.agentStateBytes
+                                )}`
+                              : ''
+                          }`}
+                        >
                           {formatRelative(version.createdAt)} ·{' '}
                           {version.fileCount} file
                           {version.fileCount === 1 ? '' : 's'} ·{' '}
-                          {bytesLabel(version.bytes)}
+                          {bytesLabel(version.bytes)} stored
                         </div>
                       </div>
                       <div className="library-version-actions">

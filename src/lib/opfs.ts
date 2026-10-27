@@ -56,7 +56,10 @@ export interface ProjectVersionMeta {
   label: string;
   createdAt: string;
   fileCount: number;
+  /** Stored bytes for the snapshot: text files plus the agent transcript. */
   bytes: number;
+  /** Share of `bytes` used by `agent-state.json`, when it was included. */
+  agentStateBytes?: number;
   hasAgentState: boolean;
 }
 
@@ -603,11 +606,13 @@ class OpfsProjectStore {
         fileCount += 1;
       }
 
+      let agentStateBytes = 0;
       if (agentState) {
         const file = await versionDir.getFileHandle(AGENT_STATE_FILENAME, { create: true });
         const writable = await file.createWritable();
         await writable.write(agentState);
         await writable.close();
+        agentStateBytes = new TextEncoder().encode(agentState).length;
       }
 
       const meta: ProjectVersionMeta = {
@@ -615,7 +620,8 @@ class OpfsProjectStore {
         label: label.trim().slice(0, 120) || defaultVersionLabel(),
         createdAt: new Date().toISOString(),
         fileCount,
-        bytes,
+        bytes: bytes + agentStateBytes,
+        agentStateBytes,
         hasAgentState: Boolean(agentState),
       };
 

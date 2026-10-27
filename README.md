@@ -107,6 +107,11 @@ automatically during `npm run build`).
 - **Ask the agent to change the project.** The Agent workbench reads, writes and
   replaces files in the same VFS, runs shell commands, and streams its answer
   into the chat while the preview hot-reloads (see below).
+- **Restore any earlier state** from **Versions** (`⇧⌘O`). Each row lists the
+  snapshot's file count and the space it occupies in OPFS, and the header sums
+  the project's snapshot storage. Submitting a prompt to the agent
+  automatically saves a `Before · <prompt>` snapshot first, so the pre-prompt
+  files and transcript are always one click away.
 
 Keyboard shortcuts: `⌘B` explorer · `⌘J` panel · `⌘⇧A` focus agent chat ·
 `Esc` close dialog · `↑/↓` shell history.
@@ -159,6 +164,11 @@ The shared tool set is `read_file`, `write_file`, `replace_in_file`,
 `list_files`, `search` (case-insensitive keyword search across all files),
 `run_bash`, and `todo_write`.
 
+Before the first step of every user-submitted prompt, Forge flushes the editor
+and writes a `Before · <prompt>` version containing the current files and agent
+transcript. Internal continuations (step-limit resume, empty-response retry) do
+not create extra snapshots.
+
 Each turn:
 
 1. The Claude harness sends the system prompt, conversation, and tool schemas
@@ -201,6 +211,7 @@ Project code is persisted in the browser's Origin Private File System:
 sandbox/<ide-sandbox-id>/projects/<project-id>/<project files…>
 sandbox/<ide-sandbox-id>/projects/<project-id>/agent-state.json
 sandbox/<ide-sandbox-id>/projects/<project-id>/.forge/project.json
+sandbox/<ide-sandbox-id>/projects/<project-id>/.forge/versions/<version-id>/
 ```
 
 - `<ide-sandbox-id>` is generated once per browser profile and stored in

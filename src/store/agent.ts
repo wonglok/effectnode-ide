@@ -13,7 +13,7 @@ import {
   writePersistedAgentState,
 } from "@/lib/agent-state";
 import { createClaudeSession } from "@/lib/claude-harness";
-import { getBoundProjectId } from "@/lib/opfs";
+import { getBoundProjectId, opfsProjectStore } from "@/lib/opfs";
 import { loadProjectAssets } from "@/lib/project-assets";
 import {
   buildAgentSystemPrompt,
@@ -67,6 +67,8 @@ export interface AgentQueueItem {
   id: string;
   text: string;
   at: number;
+  /** Internal retry/continuation prompts do not get their own snapshot. */
+  automatic?: boolean;
 }
 
 /** Transient countdown shown beside an empty-response notice. */
@@ -103,7 +105,7 @@ export interface AgentState {
   undoAvailable: boolean;
 
   init: () => Promise<void>;
-  send: (text: string) => Promise<void>;
+  send: (text: string, options?: { automatic?: boolean }) => Promise<void>;
   /** Resume the loop after the max-step guard without a new user message. */
   keepGoing: () => Promise<void>;
   /** Run the oldest queued prompt now (after a stop/limit/error). */
@@ -146,6 +148,13 @@ function makeId(prefix: string): string {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto)
     return `${prefix}_${crypto.randomUUID()}`;
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+}
+
+/** Version label for the snapshot taken just before a submitted prompt. */
+function promptSnapshotLabel(text: string): string {
+  const line = text.replace(/\s+/g, " ").trim();
+  const snippet = line.length > 56 ? `${line.slice(0, 53)}…` : line;
+  return `Before · ${snippet || "prompt"}`.slice(0, 120);
 }
 
 function messageChars(message: AgentChatMessage): number {
@@ -233,7 +242,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
     set({
       emptyResponseRetry: { ...current, secondsLeft: 0, status: "sent" },
     });
-    void get().send(EMPTY_RETRY_PROMPT);
+    void get().send(EMPTY_RETRY_PROMPT, { automatic: true });
   };
 
   const scheduleEmptyResponseRetry = (messageId: string) => {
@@ -692,13 +701,48 @@ export const useAgentStore = create<AgentState>((set, get) => {
   };
 
   /** Start one prompt. Callers must ensure the loop is idle. */
-  const startPrompt = async (text: string): Promise<RunOutcome> => {
+  const startPrompt = async (
+    text: string,
+    options: { automatic?: boolean } = {},
+  ): Promise<RunOutcome> => {
     const state = get();
     clearLimitCountdown();
 
     // `send` runs from the composer's submit gesture; unlock audio now so the
     // completion chime is allowed when the model finishes some time later.
     primeCompletionAudio();
+
+    // Snapshot the project before acting on a user-submitted prompt, so the
+    // pre-prompt files *and* transcript are restorable from Version history.
+    // Automatic continuation/retry prompts reuse that same baseline.
+    if (!options.automatic) {
+      const projectId = getBoundProjectId();
+      if (projectId) {
+        try {
+          useWorkspaceStore.getState().flush();
+          const files = runtime.snapshot();
+          if (Object.keys(files).length > 0) {
+            const version = await opfsProjectStore.createVersion(
+              projectId,
+              promptSnapshotLabel(text),
+              files,
+              serializeAgentState(get()),
+            );
+            runtime.log(
+              "success",
+              `Snapshot “${version.label}” · ${version.fileCount} files`,
+            );
+          }
+        } catch (error) {
+          runtime.log(
+            "warn",
+            `Could not snapshot before the prompt: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
+      }
+    }
 
     const snapshot = runtime.snapshot();
     const controller = new AbortController();
@@ -741,7 +785,9 @@ export const useAgentStore = create<AgentState>((set, get) => {
         set((current) => ({
           queue: current.queue.filter((item) => item.id !== next.id),
         }));
-        const outcome = await startPrompt(next.text);
+        const outcome = await startPrompt(next.text, {
+          automatic: next.automatic === true,
+        });
         if (outcome !== "complete") break;
       }
     } finally {
@@ -780,7 +826,7 @@ export const useAgentStore = create<AgentState>((set, get) => {
       return initPromise;
     },
 
-    send: async (rawText) => {
+    send: async (rawText, options) => {
       const text = rawText.trim();
       if (!text) return;
 
@@ -797,7 +843,12 @@ export const useAgentStore = create<AgentState>((set, get) => {
       set((current) => ({
         queue: [
           ...current.queue,
-          { id: makeId("prompt"), text, at: Date.now() },
+          {
+            id: makeId("prompt"),
+            text,
+            at: Date.now(),
+            ...(options?.automatic ? { automatic: true } : {}),
+          },
         ],
       }));
 
