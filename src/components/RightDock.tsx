@@ -10,9 +10,16 @@ import {
 import { useAgentStore } from '@/store/agent';
 import { useRuntimeStore } from '@/store/runtime';
 import { useUiStore } from '@/store/ui';
+import {
+  PreviewDebugButton,
+  PreviewDebugPanel,
+  usePreviewErrorListener,
+} from './PreviewDiagnostics';
 import { PreviewBody } from './PreviewPane';
 
 export function RightDock() {
+  usePreviewErrorListener();
+
   const toast = useUiStore((state) => state.toast);
 
   const status = useRuntimeStore((state) => state.status);
@@ -55,6 +62,7 @@ export function RightDock() {
             <Globe2 size={11} />
             <span>{status === 'ready' ? '/__virtual__/3000/' : 'localhost:3000'}</span>
           </div>
+          <PreviewDebugButton />
           <button
             className="icon-button"
             onClick={reloadPreview}
@@ -80,6 +88,7 @@ export function RightDock() {
           aria-busy={agentRunning}
         >
           <PreviewBody />
+          <PreviewDebugPanel />
           {agentRunning ? (
             <div className="preview-busy" role="status" aria-live="polite">
               <div className="preview-busy-orbit">

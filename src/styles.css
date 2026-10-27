@@ -2636,6 +2636,222 @@ code {
   color: var(--faint);
 }
 
+/* ── Preview diagnostics ───────────────────────────────────── */
+
+.preview-debug-trigger {
+  position: relative;
+  color: var(--red);
+}
+
+.preview-debug-trigger:hover,
+.preview-debug-trigger.is-open {
+  color: var(--red);
+  background: rgba(255, 115, 105, 0.1);
+}
+
+.preview-debug-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 12px;
+  height: 12px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: var(--red);
+  color: #160807;
+  font-family: var(--font-mono);
+  font-size: 7px;
+  font-weight: 700;
+  line-height: 12px;
+  text-align: center;
+}
+
+.preview-debug {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: #0a0d0c;
+  animation: fade-in 140ms ease-out;
+}
+
+.preview-debug-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 8px 6px 10px;
+  border-bottom: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.preview-debug-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.preview-debug-title > svg {
+  flex: none;
+  color: var(--red);
+}
+
+.preview-debug-total {
+  overflow: hidden;
+  color: var(--dim);
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.preview-debug-list {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: auto;
+  padding: 10px;
+}
+
+.preview-debug-item {
+  padding: 7px 9px 8px;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--faint);
+  border-radius: 5px;
+  background: var(--bg-elevated);
+}
+
+.preview-debug-item.is-error,
+.preview-debug-item.is-unhandledrejection {
+  border-left-color: var(--red);
+}
+
+.preview-debug-item.is-console,
+.preview-debug-item.is-warn {
+  border-left-color: var(--amber);
+}
+
+.preview-debug-item.is-resource {
+  border-left-color: var(--violet);
+}
+
+.preview-debug-item.is-network {
+  border-left-color: var(--blue);
+}
+
+.preview-debug-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.preview-debug-level {
+  color: var(--red);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.preview-debug-item.is-console .preview-debug-level,
+.preview-debug-item.is-warn .preview-debug-level {
+  color: var(--amber);
+}
+
+.preview-debug-item.is-resource .preview-debug-level {
+  color: var(--violet);
+}
+
+.preview-debug-item.is-network .preview-debug-level {
+  color: var(--blue);
+}
+
+.preview-debug-time,
+.preview-debug-count {
+  color: var(--faint);
+  font-family: var(--font-mono);
+  font-size: 8px;
+}
+
+.preview-debug-count {
+  margin-left: auto;
+  color: var(--red);
+}
+
+.preview-debug-message {
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.preview-debug-source {
+  margin-top: 4px;
+  color: var(--dim);
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  overflow-wrap: anywhere;
+}
+
+.preview-debug-stack {
+  margin-top: 6px;
+}
+
+.preview-debug-stack summary {
+  color: var(--faint);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.preview-debug-stack pre {
+  max-height: 160px;
+  margin: 6px 0 0;
+  padding: 6px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: #080a09;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.preview-debug-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border-top: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.preview-debug-actions .ghost-button,
+.preview-debug-actions .solid-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+}
+
 .agent-model-chip {
   max-width: 150px;
   overflow: hidden;

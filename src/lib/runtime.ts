@@ -1,5 +1,14 @@
-import type { ServerBridge, VirtualFS, ViteDevServer } from 'almostnode';
+import type {
+  ResponseData,
+  ServerBridge,
+  VirtualFS,
+  ViteDevServer,
+} from 'almostnode';
 import { dirname, joinPath } from './paths';
+import {
+  PREVIEW_BRIDGE_ATTRIBUTE,
+  PREVIEW_ERROR_BRIDGE,
+} from './preview-bridge';
 
 export const PREVIEW_PORT = 3000;
 
@@ -205,13 +214,17 @@ export class IdeRuntime {
     });
 
     // Vite serves files in `public/` from the site root. The virtual server
-    // serves exact paths, so rewrite those root URLs before dispatching.
+    // serves exact paths, so rewrite those root URLs before dispatching. HTML
+    // responses also get the preview diagnostics bridge.
     const serveRequest = server.handleRequest.bind(server);
-    server.handleRequest = (method, url, headers, body) => {
+    server.handleRequest = async (method, url, headers, body) => {
       const [pathname, query] = url.split('?');
       const alias = this.assetAliases.get(pathname);
       const target = alias ? alias + (query ? `?${query}` : '') : url;
-      return serveRequest(method, target, headers, body);
+      const response = await serveRequest(method, target, headers, body);
+      return method === 'HEAD'
+        ? response
+        : this.injectPreviewErrorBridge(response);
     };
 
     server.on('hmr-update', (payload: unknown) => {
@@ -232,6 +245,49 @@ export class IdeRuntime {
     server.start();
 
     this.previewUrlValue = this.bridge.getServerUrl(PREVIEW_PORT) + '/';
+  }
+
+  /**
+   * Add the diagnostics bridge to every HTML document the preview serves. It
+   * is inserted right after `<head>` so it runs before the project's modules.
+   */
+  private injectPreviewErrorBridge(response: ResponseData): ResponseData {
+    if (response.statusCode !== 200 || !this.lib) return response;
+
+    const contentType =
+      Object.entries(response.headers).find(
+        ([key]) => key.toLowerCase() === 'content-type'
+      )?.[1] ?? '';
+    if (!contentType.toLowerCase().includes('text/html')) return response;
+
+    let html: string;
+    try {
+      html = response.body.toString('utf8');
+    } catch {
+      return response;
+    }
+
+    // Older documents that already carry the bridge are left untouched.
+    if (html.includes(PREVIEW_BRIDGE_ATTRIBUTE)) return response;
+
+    const tag = `<script ${PREVIEW_BRIDGE_ATTRIBUTE}>${PREVIEW_ERROR_BRIDGE}</script>`;
+    if (/<head[^>]*>/i.test(html)) {
+      html = html.replace(/<head[^>]*>/i, (head) => head + tag);
+    } else if (/<html[^>]*>/i.test(html)) {
+      html = html.replace(/<html[^>]*>/i, (root) => root + tag);
+    } else {
+      html = tag + html;
+    }
+
+    const body = this.lib.stream.Buffer.from(html);
+    const headers = { ...response.headers };
+    for (const key of Object.keys(headers)) {
+      if (key.toLowerCase() === 'content-length') {
+        headers[key] = String(body.length);
+      }
+    }
+
+    return { ...response, headers, body };
   }
 
   private teardownServer(): void {
