@@ -2125,6 +2125,17 @@ code {
   color: #021512;
 }
 
+.build-deploy-actions .build-deploy-link.is-cloudflare {
+  background: linear-gradient(135deg, #ffc46b 0%, #f6821f 48%, #d95305 100%);
+  color: #241204;
+  box-shadow: 0 6px 20px rgba(246, 130, 31, 0.32);
+}
+
+.build-deploy-actions .build-deploy-link.is-cloudflare:hover {
+  background: linear-gradient(135deg, #ffd58d 0%, #ff942f 48%, #ee6208 100%);
+  color: #1b0d02;
+}
+
 .build-deploy-external {
   margin-left: 1px;
   opacity: 0.62;

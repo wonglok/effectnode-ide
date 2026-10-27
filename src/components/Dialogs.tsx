@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import {
+  Cloud,
   Diamond,
   ExternalLink,
   Hammer,
@@ -432,6 +433,17 @@ export function BuildDialog() {
           >
             <Diamond size={13} />
             Netlify Drop
+            <ExternalLink size={11} className="build-deploy-external" />
+          </a>
+          <a
+            className="ghost-button build-deploy-link is-cloudflare"
+            href="https://www.cloudflare.com/drop/"
+            target="_blank"
+            rel="noreferrer"
+            title="Open Cloudflare Drop in a new tab"
+          >
+            <Cloud size={13} />
+            Cloudflare Drop
             <ExternalLink size={11} className="build-deploy-external" />
           </a>
         </div>

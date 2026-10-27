@@ -1,8 +1,8 @@
 import {
   CircleHelp,
+  CloudUpload,
   Files,
   FolderKanban,
-  Hammer,
   MessageSquareText,
 } from "lucide-react";
 import { useRuntimeStore } from "@/store/runtime";
@@ -53,7 +53,7 @@ export function ActivityRail() {
           title="Build & download dist ZIP"
           aria-haspopup="dialog"
         >
-          <Hammer size={17} />
+          <CloudUpload size={17} />
         </button>
         {/* <button
           className={`rail-button ${terminalOpen && terminalTab === "console" ? "is-active" : ""}`}
