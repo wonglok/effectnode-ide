@@ -38,8 +38,8 @@ function almostnodeServiceWorker(): Plugin {
  * to deliver the zip bytes.
  */
 function starterArchive(): Plugin {
-  const file = path.resolve(root, "public/starter/template-001.zip");
-  const archivePath = "/starter/template-001.zip";
+  const file = path.resolve(root, "public/starter/template-002.zip");
+  const archivePath = "/starter/template-002.zip";
 
   return {
     name: "forge:starter-archive",

@@ -2,9 +2,9 @@
  * The project that lives inside almostnode's virtual file system the first time
  * the IDE is opened.
  *
- * The sources are stored in `public/starter/template-001.zip`. The archive is
+ * The sources are stored in `public/starter/template-002.zip`. The archive is
  * a Forge project export: `forge.manifest.json` names the project folder
- * (`template-001/`), which holds `package.json`, `src/...`, and any `public/`
+ * (`fafafa/`), which holds `package.json`, `src/...`, and any `public/`
  * binaries. Loading the zip at runtime keeps the template out of the main
  * JavaScript bundle while preserving its folder structure.
  *
@@ -18,7 +18,7 @@ import { unzipSync } from 'fflate';
 import { classifyFile } from './binary-file';
 
 /** Vite serves `public/` from the site root in dev and copies it on build. */
-const STARTER_ZIP_URL = `${import.meta.env.BASE_URL}starter/template-001.zip`;
+const STARTER_ZIP_URL = `${import.meta.env.BASE_URL}starter/template-002.zip`;
 
 const MANIFEST_FILENAME = 'forge.manifest.json';
 const AGENT_STATE_FILENAME = 'agent-state.json';
