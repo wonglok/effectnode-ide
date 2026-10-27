@@ -753,6 +753,13 @@ function buildReport(result: ProjectBuildResult): string {
         : `npm install completed.`,
     );
   }
+  if (result.typePackages.length > 0) {
+    lines.push(
+      `Added to the build container for typechecking (not to the project): ${result.typePackages.join(
+        ", ",
+      )}.`,
+    );
+  }
   if (result.timedOut) {
     lines.push("The command was stopped after the build timeout or cancel.");
   } else if (result.output) {
@@ -994,7 +1001,7 @@ export const AGENT_TOOLS: AgentToolDefinition[] = [
     function: {
       name: "build_project",
       description:
-        "Build the project in an in-browser Node container. Mirrors the project files and public assets into an almostnode container, runs npm install when node_modules is missing or package.json changed, then runs the command (default npm run build). Use it to verify the project compiles; it never writes build output back to the project.",
+        "Build the project in an in-browser Node container. Mirrors the project files and public assets into an almostnode container, runs npm install when node_modules is missing or package.json changed, then runs the command (default npm run build). Vite projects work through a container-side shim, including `vite build`; `/dist` output stays in the container and is never written back to the project.",
       parameters: {
         type: "object",
         properties: {
@@ -1185,7 +1192,7 @@ Tools:
 - run_bash(command): run a command in the virtual shell.
 - compress_zip(path, sources?): write a .zip under /public from project files or folders, including binary public assets.
 - decompress_zip(path, destination?, strip_root?): extract a .zip from /public into the project.
-- build_project(command?, install?): run npm install (when needed) and the project build in an in-browser Node container. Defaults to \`npm run build\`; use \`npm test\` for tests. Build output stays in the container.
+- build_project(command?, install?): run npm install (when needed) and the project build in an in-browser Node container. Defaults to \`npm run build\`; \`vite build\` works through a browser shim, and \`npm test\` runs tests. Build output stays in the container.
 - todo_write(todos): replace the visible task plan. The UI renders this list live.
 
 Rules:

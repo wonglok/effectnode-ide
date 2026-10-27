@@ -175,17 +175,30 @@ anything over the 20 MB per-file / 50 MB total limits.
 `build_project` verifies the project the way CI would. It mirrors the current
 files and public assets into an almostnode `createContainer()` and installs the
 project's dependencies, devDependencies included, when `node_modules` is missing
-or `package.json` changed. Direct dependency ranges are pinned after the tree
-resolves, because almostnode's flat resolver lets a peer range pick a newer
-major. It then runs the requested command, `npm run build` by default; `npm test`
-and other npm scripts work the same way. The container caches `node_modules`
-between builds, runs one build at a time, aborts the command after eight minutes,
-and returns the tail of stdout/stderr with the exit code. Build output stays
-inside the container; project files are never modified by the tool. The first
-build is slow because it installs the project's dependencies in the browser.
-Note that almostnode's Node runtime cannot execute Vite's CLI (it contains
-top-level `await`), so `vite build` is reported as an environment error; `tsc`,
-simple npm scripts, and Node scripts run normally.
+or `package.json` changed. Dependencies keep their published ESM entry points so
+Rollup can read their exports, and direct ranges are pinned after the tree
+resolves because almostnode's flat resolver lets a peer range pick a newer major.
+Vite itself is re-installed with transformation enabled because its Node API
+runs inside the container.
+
+Vite builds are supported end to end. The container replaces Vite's Node-only CLI
+with a shim that:
+
+1. Loads `vite.config.*` through almostnode's module loader (JS, MJS, CJS, or a
+   TypeScript config transpiled with the container's esbuild), including plugins.
+2. Calls Vite's build API with `configFile: false` and disables Rollup's browser
+   filesystem writes (`build.write = false`).
+3. Writes the generated chunks and assets plus `public/` into `/dist` itself.
+
+React projects get `@types/react` and `@types/react-dom` in the container when
+`package.json` omits them, so `tsc` can typecheck without touching the project.
+The tool then runs the requested command, `npm run build` by default; `vite
+build`, `npm test`, and other npm scripts work the same way. The container caches
+`node_modules` between builds, runs one build at a time, aborts the command after
+eight minutes, and returns the tail of stdout/stderr with the exit code. Build
+output stays inside the container; project files are never modified by the tool.
+The first build is slow because it installs the project's dependencies in the
+browser.
 
 ### Vercel MCP
 
