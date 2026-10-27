@@ -49,6 +49,7 @@ interface UiState {
   terminalHeight: number;
   shortcutsOpen: boolean;
   creditsOpen: boolean;
+  newProjectOpen: boolean;
   projectSwitcherOpen: boolean;
   prompt: PromptRequest | null;
   confirm: ConfirmRequest | null;
@@ -72,6 +73,8 @@ interface UiState {
   setTerminalHeight: (height: number) => void;
   setShortcutsOpen: (open: boolean) => void;
   setCreditsOpen: (open: boolean) => void;
+  openNewProject: () => void;
+  closeNewProject: () => void;
   setProjectSwitcherOpen: (open: boolean) => void;
   openPrompt: (request: PromptRequest) => void;
   closePrompt: () => void;
@@ -99,6 +102,7 @@ export const useUiStore = create<UiState>()(
       terminalHeight: 176,
       shortcutsOpen: false,
       creditsOpen: false,
+      newProjectOpen: false,
       projectSwitcherOpen: false,
       prompt: null,
       confirm: null,
@@ -146,6 +150,8 @@ export const useUiStore = create<UiState>()(
         set({ terminalHeight: clamp(height, 110, 420) }),
       setShortcutsOpen: (open) => set({ shortcutsOpen: open }),
       setCreditsOpen: (open) => set({ creditsOpen: open }),
+      openNewProject: () => set({ newProjectOpen: true }),
+      closeNewProject: () => set({ newProjectOpen: false }),
       setProjectSwitcherOpen: (open) => set({ projectSwitcherOpen: open }),
       openPrompt: (request) => set({ prompt: request }),
       closePrompt: () => set({ prompt: null }),

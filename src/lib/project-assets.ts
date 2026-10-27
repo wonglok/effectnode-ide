@@ -1,6 +1,10 @@
 import { opfsProjectStore } from './opfs';
 import { runtime } from './runtime';
-import { loadStarterAssets, STARTER_ASSET_ENTRY } from './starter-project';
+import {
+  detectStarterTemplate,
+  loadStarterAssets,
+  STARTER_ASSET_ENTRY,
+} from './starter-project';
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -18,7 +22,9 @@ export async function loadProjectAssets(
 
   if (files[STARTER_ASSET_ENTRY] !== undefined) {
     try {
-      assets = await loadStarterAssets();
+      // The project's files reveal which starter (and therefore which asset
+      // set) it came from, so movie projects restore their video after reload.
+      assets = await loadStarterAssets(detectStarterTemplate(files));
     } catch (error) {
       runtime.log(
         'warn',

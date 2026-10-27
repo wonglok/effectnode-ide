@@ -12,7 +12,12 @@ import {
 } from '@/lib/opfs';
 import { loadProjectAssets } from '@/lib/project-assets';
 import { runtime } from '@/lib/runtime';
-import { loadStarterFiles, STARTER_PROJECT_NAME } from '@/lib/starter-project';
+import {
+  DEFAULT_STARTER_TEMPLATE,
+  loadStarter,
+  STARTER_PROJECT_NAME,
+  type StarterTemplateId,
+} from '@/lib/starter-project';
 import {
   flushAgentStatePersistence,
   pauseAgentStatePersistence,
@@ -38,7 +43,7 @@ interface ProjectState extends ProjectMetaState {
   renameProject: (name: string) => void;
   /** Open an existing OPFS project, replacing the live workspace. */
   openProject: (id: string) => Promise<void>;
-  newProject: (name?: string) => Promise<void>;
+  newProject: (name?: string, template?: StarterTemplateId) => Promise<void>;
   /** Replace the workspace with files from a validated Forge ZIP archive. */
   importProject: (
     name: string,
@@ -132,10 +137,10 @@ export const useProjectStore = create<ProjectState>((set) => ({
     useUiStore.getState().toast(`Opened “${meta.name}”`);
   },
 
-  newProject: async (name) => {
+  newProject: async (name, templateId = DEFAULT_STARTER_TEMPLATE) => {
     // Load the archive before pausing persistence so a failed fetch leaves the
     // current project untouched.
-    const files = await loadStarterFiles();
+    const bundle = await loadStarter(templateId);
     flushAgentStatePersistence();
     pauseAgentStatePersistence();
     useWorkspaceStore.getState().flush();
@@ -143,9 +148,11 @@ export const useProjectStore = create<ProjectState>((set) => ({
     const local = createLocalProject(projectName);
     localStorage.setItem(CURRENT_PROJECT_KEY, local.id);
     bindOpfsProject(local.id, local.name);
-    // replaceProject mirrors the starter files into the new OPFS folder.
-    await restartWithFiles(files, await loadProjectAssets(files, local.id));
-    useWorkspaceStore.getState().loadFiles(files);
+    // replaceProject mirrors the starter files into the new OPFS folder. Mount
+    // the selected template's binaries directly; they are reloaded from the
+    // same zip (see project-assets) after a refresh.
+    await restartWithFiles(bundle.files, bundle.assets);
+    useWorkspaceStore.getState().loadFiles(bundle.files);
     set({
       id: local.id,
       name: local.name,

@@ -11,6 +11,7 @@ import {
 } from '@/lib/opfs';
 import { loadProjectAssets } from '@/lib/project-assets';
 import { runtime } from '@/lib/runtime';
+import type { StarterTemplateId } from '@/lib/starter-project';
 import { flushAgentStatePersistence, useAgentStore } from './agent';
 import { useProjectStore } from './projects';
 import { restartWithFiles } from './runtime';
@@ -33,7 +34,10 @@ interface LibraryState {
   refresh: () => Promise<void>;
   select: (id: string) => Promise<void>;
   openProject: (id: string) => Promise<void>;
-  createProject: (name: string) => Promise<void>;
+  createProject: (
+    name: string,
+    template?: StarterTemplateId
+  ) => Promise<void>;
   duplicateProject: (id: string, name: string) => Promise<void>;
   renameProject: (id: string, name: string) => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
@@ -104,12 +108,12 @@ export const useProjectLibraryStore = create<LibraryState>((set, get) => ({
     }
   },
 
-  createProject: async (name) => {
+  createProject: async (name, template) => {
     if (get().busy) return;
     const projectName = name.trim() || 'untitled';
     set({ busy: 'create' });
     try {
-      await useProjectStore.getState().newProject(projectName);
+      await useProjectStore.getState().newProject(projectName, template);
       const createdId = activeProjectId();
       await get().refresh();
       if (createdId) await get().select(createdId);

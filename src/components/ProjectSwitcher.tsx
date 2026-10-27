@@ -30,6 +30,7 @@ export function ProjectSwitcher() {
   const setOpen = useUiStore((state) => state.setProjectSwitcherOpen);
   const openPrompt = useUiStore((state) => state.openPrompt);
   const openConfirm = useUiStore((state) => state.openConfirm);
+  const openNewProject = useUiStore((state) => state.openNewProject);
 
   const projects = useProjectLibraryStore((state) => state.projects);
   const loading = useProjectLibraryStore((state) => state.loading);
@@ -42,7 +43,6 @@ export function ProjectSwitcher() {
   const refresh = useProjectLibraryStore((state) => state.refresh);
   const select = useProjectLibraryStore((state) => state.select);
   const openProject = useProjectLibraryStore((state) => state.openProject);
-  const createProject = useProjectLibraryStore((state) => state.createProject);
   const duplicateProject = useProjectLibraryStore(
     (state) => state.duplicateProject
   );
@@ -57,7 +57,6 @@ export function ProjectSwitcher() {
   const activeId = useProjectStore((state) => state.id);
 
   const [query, setQuery] = useState('');
-  const [newName, setNewName] = useState('');
   const [versionLabel, setVersionLabel] = useState('');
 
   useEffect(() => {
@@ -81,15 +80,6 @@ export function ProjectSwitcher() {
     (sum, project) => sum + project.versionCount,
     0
   );
-
-  const onCreate = (event: FormEvent) => {
-    event.preventDefault();
-    if (isBusy) return;
-    const name = newName.trim();
-    if (!name) return;
-    setNewName('');
-    void createProject(name);
-  };
 
   const onSaveVersion = (event: FormEvent) => {
     event.preventDefault();
@@ -223,25 +213,20 @@ export function ProjectSwitcher() {
             ))}
           </div>
 
-          <form className="library-new" onSubmit={onCreate}>
-            <input
-              value={newName}
-              onChange={(event) => setNewName(event.target.value)}
-              placeholder="New project name"
-              spellCheck={false}
-              maxLength={120}
-              aria-label="New project name"
-            />
+          <div className="library-new">
             <button
-              className="solid-button small"
-              type="submit"
-              disabled={!newName.trim() || isBusy}
-              title="Create a project from the starter template"
+              className="solid-button small library-new-button"
+              onClick={() => {
+                setOpen(false);
+                openNewProject();
+              }}
+              disabled={isBusy}
+              title="Create a project from a starter template"
             >
               <Plus size={12} />
-              New
+              New project
             </button>
-          </form>
+          </div>
         </aside>
 
         <section className="library-detail">

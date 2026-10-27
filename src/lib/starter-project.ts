@@ -1,24 +1,21 @@
 /**
- * The project that lives inside almostnode's virtual file system the first time
- * the IDE is opened.
+ * Starter projects copied into the virtual file system when a new project is
+ * created (or when the IDE has no project to restore).
  *
- * The sources are stored in `public/starter/simple-template.zip`. The archive
- * is a Forge project export: `forge.manifest.json` names the project folder
- * (`simple-template/`), which holds `package.json`, `src/...`, and any
- * `public/` binaries. Loading the zip at runtime keeps the template out of the
- * main JavaScript bundle while preserving its folder structure.
+ * The sources are stored as zipped Forge project exports in
+ * `public/starter/`. Each archive carries `forge.manifest.json`, which names
+ * the project folder (`simple-template/`), plus `package.json`, `src/...`, and
+ * any `public/` binaries. Loading a zip on demand keeps the templates out of
+ * the main JavaScript bundle while preserving their folder structure.
  *
- * The starter is a six-chapter, scroll-driven landing page for MY COMPANY:
- * a Zustand scroll store, a chapter timeline, and one canvas that draws every
- * scene. Each chapter's drawing code lives in its own `src/sections/<scene>/`
- * folder. The in-browser ViteDevServer compiles the TSX with esbuild-wasm and
- * maps React/Zustand to esm.sh.
+ * Both starters are six-chapter, scroll-driven landing pages with a Zustand
+ * store, a chapter timeline, and a canvas that draws every scene. The movie
+ * variant adds movie controls, a final-movie section, and a video asset.
  */
 import { unzipSync } from 'fflate';
 import { classifyFile } from './binary-file';
 
-/** Vite serves `public/` from the site root in dev and copies it on build. */
-const STARTER_ZIP_URL = `${import.meta.env.BASE_URL}starter/simple-template.zip`;
+const STARTER_BASE_URL = `${import.meta.env.BASE_URL}starter/`;
 
 const MANIFEST_FILENAME = 'forge.manifest.json';
 const AGENT_STATE_FILENAME = 'agent-state.json';
@@ -31,6 +28,52 @@ export const STARTER_ENTRY = '/src/components/Landing.tsx';
 
 /** A project only needs the starter binaries when chapter 4 is present. */
 export const STARTER_ASSET_ENTRY = '/src/sections/apartment/index.ts';
+
+export type StarterTemplateId = 'simple' | 'movie';
+
+export interface StarterTemplate {
+  id: StarterTemplateId;
+  label: string;
+  description: string;
+  meta: string;
+  url: string;
+}
+
+/** The templates offered by the new-project dialog, in display order. */
+export const STARTER_TEMPLATES: readonly StarterTemplate[] = [
+  {
+    id: 'simple',
+    label: 'Simple',
+    description:
+      'The six-chapter scroll story with WebGPU scenes and a lightweight asset set.',
+    meta: '41 files · 3 public assets',
+    url: `${STARTER_BASE_URL}simple-template.zip`,
+  },
+  {
+    id: 'movie',
+    label: 'Movie',
+    description:
+      'The same story with movie controls, a final-movie clip and motion transitions.',
+    meta: '43 files · 4 public assets',
+    url: `${STARTER_BASE_URL}movie-template.zip`,
+  },
+];
+
+export const DEFAULT_STARTER_TEMPLATE: StarterTemplateId = 'simple';
+
+/**
+ * The movie starter is the simple project plus this component. Projects keep
+ * their binary template assets available across reloads by checking for it.
+ */
+const MOVIE_TEMPLATE_MARKER = '/src/components/MovieControls.tsx';
+
+export function detectStarterTemplate(
+  files: Record<string, string>
+): StarterTemplateId {
+  return files[MOVIE_TEMPLATE_MARKER] !== undefined
+    ? 'movie'
+    : DEFAULT_STARTER_TEMPLATE;
+}
 
 export interface StarterBundle {
   files: Record<string, string>;
@@ -101,31 +144,48 @@ function readStarterZip(archive: Uint8Array): StarterBundle {
   return { files, assets };
 }
 
-let starterPromise: Promise<StarterBundle> | null = null;
+const starterPromises = new Map<StarterTemplateId, Promise<StarterBundle>>();
 
-/** Fetch and unpack the starter once, then reuse the decoded contents. */
-export function loadStarter(): Promise<StarterBundle> {
-  starterPromise ??= (async () => {
-    const response = await fetch(STARTER_ZIP_URL);
+/**
+ * Fetch and unpack a starter once, then reuse the decoded contents. Simple and
+ * movie have independent caches, so switching between them never re-downloads
+ * the same archive twice in one session.
+ */
+export function loadStarter(
+  templateId: StarterTemplateId = DEFAULT_STARTER_TEMPLATE
+): Promise<StarterBundle> {
+  const cached = starterPromises.get(templateId);
+  if (cached) return cached;
+
+  const template =
+    STARTER_TEMPLATES.find((entry) => entry.id === templateId) ??
+    STARTER_TEMPLATES[0];
+  const promise = (async () => {
+    const response = await fetch(template.url);
     if (!response.ok) {
       throw new Error(
-        `Could not load the starter template (HTTP ${response.status})`
+        `Could not load the ${template.label.toLowerCase()} template (HTTP ${response.status})`
       );
     }
     return readStarterZip(new Uint8Array(await response.arrayBuffer()));
   })().catch((error) => {
-    starterPromise = null;
+    starterPromises.delete(template.id);
     throw error;
   });
 
-  return starterPromise;
+  starterPromises.set(template.id, promise);
+  return promise;
 }
 
-export async function loadStarterFiles(): Promise<Record<string, string>> {
-  return (await loadStarter()).files;
+export async function loadStarterFiles(
+  templateId: StarterTemplateId = DEFAULT_STARTER_TEMPLATE
+): Promise<Record<string, string>> {
+  return (await loadStarter(templateId)).files;
 }
 
-/** The starter's public binaries, ready to mount beside a project's files. */
-export async function loadStarterAssets(): Promise<Record<string, Uint8Array>> {
-  return (await loadStarter()).assets;
+/** A template's public binaries, ready to mount beside a project's files. */
+export async function loadStarterAssets(
+  templateId: StarterTemplateId = DEFAULT_STARTER_TEMPLATE
+): Promise<Record<string, Uint8Array>> {
+  return (await loadStarter(templateId)).assets;
 }

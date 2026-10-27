@@ -2002,6 +2002,94 @@ code {
   line-height: 1.5;
 }
 
+/* ── New project dialog ────────────────────────────────────── */
+
+.new-project-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.template-picker {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.template-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 122px;
+  padding: 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  text-align: left;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.template-card:hover {
+  border-color: var(--dim);
+  background: var(--panel-2);
+}
+
+.template-card.is-selected {
+  border-color: var(--accent-line);
+  background: var(--accent-wash);
+}
+
+.template-card-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.template-card-icon {
+  flex: 0 0 auto;
+  color: var(--dim);
+}
+
+.template-card.is-selected .template-card-icon {
+  color: var(--accent);
+}
+
+.template-card-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.template-card-check {
+  margin-left: auto;
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.template-card-copy {
+  color: var(--muted);
+  font-size: 10.5px;
+  line-height: 1.55;
+}
+
+.template-card-meta {
+  margin-top: auto;
+  color: var(--faint);
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.04em;
+}
+
+.new-project-note {
+  margin: 0;
+  color: var(--faint);
+  font-size: 10.5px;
+  line-height: 1.55;
+}
+
 /* ── Projects & versions ───────────────────────────────────── */
 
 .project-chip-caret {
@@ -2048,7 +2136,6 @@ code {
 }
 
 .library-search input,
-.library-new input,
 .library-version-create-controls input {
   min-width: 0;
   border: 0;
@@ -2064,7 +2151,6 @@ code {
 }
 
 .library-search input::placeholder,
-.library-new input::placeholder,
 .library-version-create-controls input::placeholder {
   color: var(--faint);
 }
@@ -2168,17 +2254,8 @@ code {
   border-top: 1px solid var(--line);
 }
 
-.library-new input {
+.library-new-button {
   flex: 1;
-  height: 28px;
-  padding: 0 9px;
-  border: 1px solid var(--line-strong);
-  border-radius: 6px;
-  background: var(--panel);
-}
-
-.library-new input:focus {
-  border-color: var(--accent-line);
 }
 
 .library-detail {

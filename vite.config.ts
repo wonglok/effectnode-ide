@@ -32,24 +32,30 @@ function almostnodeServiceWorker(): Plugin {
 }
 
 /**
- * Serve the starter archive from `public/` in dev. Nitro's SPA fallback
+ * Serve the starter archives from `public/` in dev. Nitro's SPA fallback
  * answers non-module requests with index.html before Vite's static middleware
  * sees them, so this middleware is registered ahead of Nitro (plugin order)
- * to deliver the zip bytes.
+ * to deliver the zip bytes. It also avoids the static middleware's file
+ * reader on this workspace's external volume, which corrupted large archives
+ * after the first 64 KB.
  */
-function starterArchive(): Plugin {
-  const file = path.resolve(root, "public/starter/simple-template.zip");
-  const archivePath = "/starter/simple-template.zip";
+function starterArchives(): Plugin {
+  const directory = path.resolve(root, "public/starter");
 
   return {
-    name: "forge:starter-archive",
+    name: "forge:starter-archives",
     apply: "serve",
     configureServer(server) {
       server.middlewares.use((req, res, next) => {
         if (req.method !== "GET" && req.method !== "HEAD") return next();
         const [pathname] = (req.url ?? "").split("?");
-        if (pathname !== archivePath) return next();
+        if (!pathname.startsWith("/starter/")) return next();
 
+        const name = pathname.slice("/starter/".length);
+        if (!/^[A-Za-z0-9._-]+\.zip$/.test(name)) return next();
+
+        const file = path.resolve(directory, name);
+        if (path.dirname(file) !== directory) return next();
         if (!fs.existsSync(file) || !fs.statSync(file).isFile()) return next();
 
         res.setHeader("Content-Type", "application/zip");
@@ -121,7 +127,7 @@ export default defineConfig({
     almostnodePlugin(),
     react(),
     tailwindcss(),
-    starterArchive(),
+    starterArchives(),
     nitro(),
     almostnodeServiceWorker(),
     almostnodeWorkerPatch(),

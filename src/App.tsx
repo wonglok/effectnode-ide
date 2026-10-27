@@ -8,6 +8,7 @@ import {
 } from '@/components/Dialogs';
 import { EditorPane } from '@/components/EditorPane';
 import { FileExplorer } from '@/components/FileExplorer';
+import { NewProjectDialog } from '@/components/NewProjectDialog';
 import { ProjectSwitcher } from '@/components/ProjectSwitcher';
 import { RightDock } from '@/components/RightDock';
 import { StatusBar } from '@/components/StatusBar';
@@ -233,6 +234,7 @@ export default function App() {
       <StatusBar />
 
       <ProjectSwitcher />
+      <NewProjectDialog />
       <PromptDialog />
       <ConfirmDialog />
       <ShortcutsDialog />

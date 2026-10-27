@@ -34,12 +34,11 @@ export function TitleBar() {
   const name = useProjectStore((state) => state.name);
   const status = useRuntimeStore((state) => state.status);
   const reloadPreview = useRuntimeStore((state) => state.reloadPreview);
-  const newProject = useProjectStore((state) => state.newProject);
   const importProject = useProjectStore((state) => state.importProject);
 
   const openConfirm = useUiStore((state) => state.openConfirm);
   const closeConfirm = useUiStore((state) => state.closeConfirm);
-  const openPrompt = useUiStore((state) => state.openPrompt);
+  const openNewProject = useUiStore((state) => state.openNewProject);
   const setProjectSwitcherOpen = useUiStore(
     (state) => state.setProjectSwitcherOpen
   );
@@ -91,26 +90,6 @@ export function TitleBar() {
     }
   };
 
-  const onNew = () => {
-    openPrompt({
-      title: 'New project',
-      label: 'Project name',
-      initialValue: 'untitled',
-      placeholder: 'e.g. landing-page-v2',
-      confirmLabel: 'Create project',
-      onConfirm: (name) => {
-        const projectName = name.trim();
-        if (!projectName) return;
-        void newProject(projectName).then(async () => {
-          const library = useProjectLibraryStore.getState();
-          await library.refresh();
-          const createdId = useProjectStore.getState().id;
-          if (createdId) await library.select(createdId);
-        });
-      },
-    });
-  };
-
   const onLogout = () => {
     // Save the transcript and abort any running agent; locking must not wipe it.
     flushAgentStatePersistence();
@@ -148,7 +127,11 @@ export function TitleBar() {
           <span className="tool-label">Versions</span>
         </button>
 
-        <button className="tool-button" onClick={onNew} title="New project">
+        <button
+          className="tool-button"
+          onClick={openNewProject}
+          title="New project"
+        >
           <FilePlus2 size={13} />
           <span className="tool-label">New</span>
         </button>
